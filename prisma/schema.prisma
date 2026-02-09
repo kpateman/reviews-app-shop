@@ -1,0 +1,86 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model Review {
+  id              String   @id @default(cuid())
+  shop            String
+  productId       String?  // Shopify product GID, null for company reviews
+  productTitle    String?
+  customerId      String?  // Shopify customer GID
+  customerEmail   String
+  customerName    String
+  orderId         String?  // Shopify order GID for purchase verification
+  type            String   // 'product' or 'company'
+  rating          Int
+  title           String
+  content         String
+  status          String   @default("pending") // 'pending', 'approved', 'rejected'
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  reply           String?  // Store owner's reply
+  repliedAt       DateTime? // When the reply was added
+  images          ReviewImage[]
+
+  // Performance indexes for common queries
+  @@index([shop]) // Admin dashboard - get all reviews for a shop
+  @@index([shop, status]) // Get pending/approved reviews
+  @@index([shop, status, type]) // Get reviews by type and status
+  @@index([shop, productId, status]) // Get approved reviews for a product
+  @@index([shop, customerEmail]) // Duplicate detection
+  @@index([productId, status]) // Storefront queries for specific product
+  @@index([createdAt]) // Sorting by date
+}
+
+model ReviewImage {
+  id                    String   @id @default(cuid())
+  reviewId              String
+  filename              String
+  url                   String   // Cloudinary URL
+  cloudinaryPublicId    String?  // For easier deletion
+  status                String   @default("pending") // 'pending', 'approved', 'rejected'
+  review                Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+}
+
+model ShopSettings {
+  id                    String   @id @default(cuid())
+  shop                  String   @unique
+  requireVerifiedPurchase Boolean @default(false)
+  autoApproveReviews    Boolean @default(false)
+  enableSchemaMarkup    Boolean @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}

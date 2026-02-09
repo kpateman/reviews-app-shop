@@ -1,0 +1,68 @@
+{% comment %}
+  Star Rating Summary Block
+  Displays a compact star rating summary for use anywhere on product pages
+{% endcomment %}
+
+<div class="star-rating-summary"
+     data-product-id="{{ product.id | prepend: 'gid://shopify/Product/' }}">
+  <span class="stars">☆☆☆☆☆</span>
+  <span class="count"></span>
+</div>
+
+<style>
+  .star-rating-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: {{ block.settings.font_size }}px;
+  }
+
+  .star-rating-summary .stars {
+    color: #f5a623;
+  }
+
+  .star-rating-summary .count {
+    color: #666;
+    font-size: 0.85em;
+  }
+</style>
+
+<script>
+  (function() {
+    const container = document.querySelector('.star-rating-summary');
+    const productId = container.dataset.productId;
+
+    // Use the app proxy URL
+    const apiUrl = '/apps/reviews';
+
+    fetch(`${apiUrl}?productId=${encodeURIComponent(productId)}&type=product`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.summary) {
+          const stars = '★'.repeat(Math.round(data.summary.averageRating)) + '☆'.repeat(5 - Math.round(data.summary.averageRating));
+          container.querySelector('.stars').textContent = stars;
+          container.querySelector('.count').textContent = `(${data.summary.count})`;
+        }
+      })
+      .catch(err => console.error('Error loading rating:', err));
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Star Rating Summary",
+  "target": "section",
+  "settings": [
+    {
+      "type": "range",
+      "id": "font_size",
+      "label": "Font Size",
+      "min": 12,
+      "max": 24,
+      "step": 1,
+      "default": 16,
+      "unit": "px"
+    }
+  ]
+}
+{% endschema %}

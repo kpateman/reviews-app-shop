@@ -1,0 +1,27 @@
+api_version = "2026-04"
+
+[[extensions]]
+name = "Product Reviews"
+handle = "product-reviews"
+uid = "d40bf8ce-aa3c-5868-ba22-fe4fb0920fb061797446"
+type = "theme"
+
+  [[extensions.blocks]]
+  name = "Product Reviews"
+  target = "section"
+  template = "blocks/product-reviews.liquid"
+
+  [[extensions.blocks]]
+  name = "Review Form"
+  target = "section"
+  template = "blocks/review-form.liquid"
+
+  [[extensions.blocks]]
+  name = "Star Rating Summary"
+  target = "section"
+  template = "blocks/star-rating.liquid"
+
+  [[extensions.blocks]]
+  name = "Reviews Carousel"
+  target = "section"
+  template = "blocks/reviews-carousel.liquid"

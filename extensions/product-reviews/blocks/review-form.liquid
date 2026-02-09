@@ -1,0 +1,240 @@
+{% comment %}
+  Standalone Review Form Block
+  Can be placed anywhere to collect reviews
+{% endcomment %}
+
+<div class="review-form-block"
+     data-product-id="{{ product.id | prepend: 'gid://shopify/Product/' }}"
+     data-product-title="{{ product.title | escape }}">
+
+  <h3 class="form-title">{{ block.settings.title }}</h3>
+
+  {% if customer %}
+  <form id="standalone-review-form" class="review-form" action="/apps/reviews" method="POST">
+    <input type="hidden" name="productId" value="{{ product.id | prepend: 'gid://shopify/Product/' }}">
+    <input type="hidden" name="productTitle" value="{{ product.title | escape }}">
+    <input type="hidden" name="customerId" value="{{ customer.id | prepend: 'gid://shopify/Customer/' }}">
+    <input type="hidden" name="customerEmail" value="{{ customer.email }}">
+    <input type="hidden" name="customerName" value="{{ customer.name | default: customer.email }}">
+    <input type="hidden" name="type" value="product">
+
+    <div class="form-group">
+      <label>Your Rating</label>
+      <div class="star-input" id="standalone-star-input">
+        <span class="star" data-rating="1">☆</span>
+        <span class="star" data-rating="2">☆</span>
+        <span class="star" data-rating="3">☆</span>
+        <span class="star" data-rating="4">☆</span>
+        <span class="star" data-rating="5">☆</span>
+      </div>
+      <input type="hidden" name="rating" id="standalone-rating-input" required>
+    </div>
+
+    <div class="form-group">
+      <label for="standalone-title">Review Title</label>
+      <input type="text" id="standalone-title" name="title" required maxlength="100">
+    </div>
+
+    <div class="form-group">
+      <label for="standalone-content">Your Review</label>
+      <textarea id="standalone-content" name="content" required rows="4"></textarea>
+    </div>
+
+    <button type="submit" class="submit-btn">{{ block.settings.button_text }}</button>
+    <p class="message" id="standalone-message"></p>
+  </form>
+  {% else %}
+  <p class="login-prompt">Please <a href="/account/login">log in</a> to write a review.</p>
+  {% endif %}
+</div>
+
+<style>
+  .review-form-block {
+    padding: 1.5rem;
+    background: {{ block.settings.background_color }};
+    border-radius: 8px;
+  }
+
+  .form-title {
+    margin-bottom: 1rem;
+  }
+
+  .review-form .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .review-form label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+  }
+
+  .review-form input[type="text"],
+  .review-form textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+  }
+
+  .star-input {
+    display: flex;
+    gap: 0.25rem;
+    font-size: 1.75rem;
+    cursor: pointer;
+  }
+
+  .star-input .star {
+    color: #ddd;
+    transition: color 0.2s;
+  }
+
+  .star-input .star.active {
+    color: #f5a623;
+  }
+
+  .submit-btn {
+    background: {{ block.settings.button_color }};
+    color: #fff;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+
+  .submit-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .message {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    border-radius: 4px;
+  }
+
+  .message.success {
+    background: #e8f5e9;
+    color: #2e7d32;
+  }
+
+  .message.error {
+    background: #ffebee;
+    color: #c62828;
+  }
+
+  .login-prompt {
+    text-align: center;
+  }
+
+  .login-prompt a {
+    font-weight: 600;
+  }
+</style>
+
+<script>
+  (function() {
+    const apiUrl = '/apps/reviews';
+
+    const starInput = document.getElementById('standalone-star-input');
+    const ratingInput = document.getElementById('standalone-rating-input');
+
+    if (starInput) {
+      const stars = starInput.querySelectorAll('.star');
+      stars.forEach(star => {
+        star.addEventListener('click', () => {
+          const rating = parseInt(star.dataset.rating);
+          ratingInput.value = rating;
+          stars.forEach((s, i) => {
+            s.textContent = i < rating ? '★' : '☆';
+            s.classList.toggle('active', i < rating);
+          });
+        });
+      });
+    }
+
+    const form = document.getElementById('standalone-review-form');
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const formData = new FormData(form);
+
+        if (!formData.get('rating')) {
+          showMsg('Please select a rating', 'error');
+          return;
+        }
+
+        const btn = form.querySelector('button[type="submit"]');
+        btn.disabled = true;
+
+        try {
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            body: formData
+          });
+
+          const result = await response.json();
+
+          if (response.ok) {
+            showMsg(result.message || 'Thank you for your review!', 'success');
+            form.reset();
+            starInput.querySelectorAll('.star').forEach(s => {
+              s.textContent = '☆';
+              s.classList.remove('active');
+            });
+          } else {
+            showMsg(result.error || 'Failed to submit review', 'error');
+          }
+        } catch (error) {
+          showMsg('Failed to submit. Please try again.', 'error');
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    }
+
+    function showMsg(text, type) {
+      const el = document.getElementById('standalone-message');
+      if (el) {
+        el.textContent = text;
+        el.className = `message ${type}`;
+      }
+    }
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Review Form",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Form Title",
+      "default": "Write a Review"
+    },
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Button Text",
+      "default": "Submit Review"
+    },
+    {
+      "type": "color",
+      "id": "background_color",
+      "label": "Background Color",
+      "default": "#f9f9f9"
+    },
+    {
+      "type": "color",
+      "id": "button_color",
+      "label": "Button Color",
+      "default": "#000000"
+    }
+  ]
+}
+{% endschema %}

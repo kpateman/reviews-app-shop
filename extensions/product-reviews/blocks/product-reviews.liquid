@@ -1,0 +1,892 @@
+{% comment %}
+  Product Reviews Block
+  Displays reviews for the current product
+{% endcomment %}
+
+{% assign block_id = block.id | replace: '-', '' %}
+
+<div class="reviews-container reviews-width-{{ block.settings.block_width }} reviews-layout-{{ block.settings.layout_style }} reviews-align-{{ block.settings.block_alignment }} reviews-padding-{{ block.settings.block_padding }}"
+     id="reviews-container-{{ block_id }}"
+     data-product-id="{{ product.id | prepend: 'gid://shopify/Product/' }}"
+     data-block-id="{{ block_id }}">
+
+  <div class="reviews-header">
+    <h2 class="reviews-title">{{ block.settings.title }}</h2>
+    <div class="reviews-summary" id="reviews-summary-{{ block_id }}">
+      <span class="reviews-average">--</span>
+      <span class="reviews-stars">☆☆☆☆☆</span>
+      <span class="reviews-count">(0 reviews)</span>
+    </div>
+  </div>
+
+  <div class="reviews-list" id="reviews-list-{{ block_id }}">
+    <p class="reviews-loading">Loading reviews...</p>
+  </div>
+</div>
+
+  {% if customer %}
+  <div class="review-form-container" id="review-form-container-{{ block_id }}">
+    <h3>Write a Review</h3>
+    <form id="review-form-{{ block_id }}" class="review-form" action="/apps/reviews" method="POST">
+      <input type="hidden" name="productId" value="{{ product.id | prepend: 'gid://shopify/Product/' }}">
+      <input type="hidden" name="productTitle" value="{{ product.title | escape }}">
+      <input type="hidden" name="customerId" value="{{ customer.id | prepend: 'gid://shopify/Customer/' }}">
+      <input type="hidden" name="customerEmail" value="{{ customer.email }}">
+      <input type="hidden" name="customerName" value="{{ customer.name | default: customer.email }}">
+      <input type="hidden" name="type" value="product">
+
+      <div class="form-group">
+        <label>Rating</label>
+        <div class="star-rating-input" id="star-rating-input-{{ block_id }}">
+          <span class="star" data-rating="1">☆</span>
+          <span class="star" data-rating="2">☆</span>
+          <span class="star" data-rating="3">☆</span>
+          <span class="star" data-rating="4">☆</span>
+          <span class="star" data-rating="5">☆</span>
+        </div>
+        <input type="hidden" name="rating" id="rating-input-{{ block_id }}" required>
+      </div>
+
+      <div class="form-group">
+        <label for="review-title-{{ block_id }}">Title</label>
+        <input type="text" id="review-title-{{ block_id }}" name="title" required maxlength="100" placeholder="Summarize your experience">
+      </div>
+
+      <div class="form-group">
+        <label for="review-content-{{ block_id }}">Your Review</label>
+        <textarea id="review-content-{{ block_id }}" name="content" required rows="4" placeholder="Share the details of your experience..."></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Add Photos (optional, max 2)</label>
+        <div class="image-upload-container">
+          <input type="file" id="review-images-{{ block_id }}" accept="image/*" multiple style="display: none;">
+          <button type="button" class="add-photo-btn" id="add-photo-btn-{{ block_id }}">
+            + Add Photos
+          </button>
+          <div id="image-previews-{{ block_id }}" class="image-previews"></div>
+        </div>
+        <p class="upload-hint">Images will be reviewed before appearing publicly.</p>
+      </div>
+
+      <button type="submit" class="submit-review-btn">Submit Review</button>
+      <p class="form-message" id="form-message-{{ block_id }}"></p>
+    </form>
+  </div>
+  {% else %}
+  <div class="review-login-prompt">
+    <p><a href="/account/login">Log in</a> to write a review</p>
+  </div>
+  {% endif %}
+
+<!-- Shared lightbox (only need one per page) -->
+<div class="image-lightbox" id="image-lightbox-{{ block_id }}" onclick="window.closeLightbox && closeLightbox()">
+  <span class="close-btn">&times;</span>
+  <img src="" alt="Full size review photo" id="lightbox-image-{{ block_id }}">
+</div>
+
+<style>
+  .reviews-container {
+    font-family: inherit;
+    min-width: 280px;
+    box-sizing: border-box;
+  }
+
+  /* Card size options (for grid layout) */
+  .reviews-width-narrow .review-card { flex: 1 1 180px; max-width: 260px; }
+  .reviews-width-medium .review-card { flex: 1 1 250px; max-width: 350px; }
+  .reviews-width-wide .review-card { flex: 1 1 320px; max-width: 450px; }
+  .reviews-width-full .review-card { flex: 1 1 100%; max-width: 100%; }
+
+  /* Masonry layout style */
+  .reviews-layout-masonry .reviews-list {
+    display: block;
+    column-gap: 1rem;
+  }
+  .reviews-layout-masonry .review-card {
+    break-inside: avoid;
+    margin-bottom: 1rem;
+    max-width: 100%;
+  }
+  .reviews-layout-masonry .review-images img,
+  .reviews-layout-masonry .review-images.single-image img {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: none;
+  }
+
+  /* Masonry column widths - browser fits as many as possible */
+  .reviews-layout-masonry.reviews-width-narrow .reviews-list { column-width: 180px; }
+  .reviews-layout-masonry.reviews-width-medium .reviews-list { column-width: 250px; }
+  .reviews-layout-masonry.reviews-width-wide .reviews-list { column-width: 320px; }
+  .reviews-layout-masonry.reviews-width-full .reviews-list { column-width: 100%; }
+
+  /* Alignment options */
+  .reviews-align-left { margin-left: 0; margin-right: auto; }
+  .reviews-align-center { margin-left: auto; margin-right: auto; }
+  .reviews-align-right { margin-left: auto; margin-right: 0; }
+
+  /* Padding options */
+  .reviews-padding-none { padding: 0; }
+  .reviews-padding-small { padding: 1rem 0.5rem; }
+  .reviews-padding-medium { padding: 2rem 1rem; }
+  .reviews-padding-large { padding: 3rem 1.5rem; }
+
+
+  .reviews-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .reviews-title {
+    font-size: 1.5rem;
+    margin: 0;
+  }
+
+  .reviews-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .reviews-average {
+    font-size: 1.5rem;
+    font-weight: bold;
+  }
+
+  .reviews-stars {
+    color: #f5a623;
+    font-size: 1.25rem;
+  }
+
+  .reviews-count {
+    color: #666;
+  }
+
+  .reviews-loading {
+    text-align: center;
+    color: #666;
+    padding: 2rem;
+  }
+
+  .reviews-list {
+    margin-bottom: 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .review-card {
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    padding: 1rem;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  /* Compact layout for small screens - stack cards */
+  @media (max-width: 480px) {
+    .review-card {
+      flex: 1 1 100% !important;
+      max-width: 100% !important;
+    }
+
+    .reviews-title {
+      font-size: 1.25rem;
+    }
+
+    .reviews-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+
+  .review-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .review-customer-name {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+
+  .review-date {
+    font-size: 0.85rem;
+    color: #666;
+  }
+
+  .review-rating {
+    color: #f5a623;
+    font-size: 1.1rem;
+  }
+
+  .review-title {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    font-size: 1.1rem;
+  }
+
+  .review-content {
+    color: #444;
+    line-height: 1.6;
+  }
+
+  .verified-badge {
+    display: inline-block;
+    background: #e8f5e9;
+    color: #2e7d32;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    margin-left: 0.5rem;
+  }
+
+  .review-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    justify-content: flex-start;
+  }
+
+  .review-images img {
+    width: auto;
+    max-width: 100%;
+    max-height: 150px;
+    height: auto;
+    object-fit: contain;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .review-images img:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+
+  /* Single image - can be a bit larger */
+  .review-images.single-image img {
+    max-height: 200px;
+  }
+
+  /* Lightbox for full-size image viewing */
+  .image-lightbox {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.9);
+    z-index: 9999;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .image-lightbox.active {
+    display: flex;
+  }
+
+  .image-lightbox img {
+    max-width: 90%;
+    max-height: 90%;
+    object-fit: contain;
+    border-radius: 4px;
+  }
+
+  .image-lightbox .close-btn {
+    position: absolute;
+    top: 20px;
+    right: 30px;
+    color: white;
+    font-size: 2rem;
+    cursor: pointer;
+  }
+
+
+  .review-reply {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #f0f4f8;
+    border-left: 3px solid #3498db;
+    border-radius: 0 4px 4px 0;
+  }
+
+  .reply-header {
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+  }
+
+  .reply-content {
+    color: #444;
+    line-height: 1.5;
+  }
+
+  .no-reviews {
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+    background: #f9f9f9;
+    border-radius: 8px;
+  }
+
+  .review-form-container {
+    border-top: 1px solid #e5e5e5;
+    padding-top: 2rem;
+    margin-top: 2rem;
+    max-width: 480px;
+  }
+
+  .review-form-container h3 {
+    margin-bottom: 1rem;
+  }
+
+
+  .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+  }
+
+  .form-group input,
+  .form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+    font-family: inherit;
+  }
+
+  .form-group textarea {
+    resize: vertical;
+    min-height: 100px;
+  }
+
+  .star-rating-input {
+    display: flex;
+    gap: 0.25rem;
+    font-size: 1.75rem;
+    cursor: pointer;
+  }
+
+  .star-rating-input .star {
+    color: #ddd;
+    transition: color 0.2s;
+  }
+
+  .star-rating-input .star.active,
+  .star-rating-input .star:hover {
+    color: #f5a623;
+  }
+
+  .submit-review-btn {
+    background: #000;
+    color: #fff;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .submit-review-btn:hover {
+    background: #333;
+  }
+
+  .submit-review-btn:disabled {
+    background: #999;
+    cursor: not-allowed;
+  }
+
+  .form-message {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    border-radius: 4px;
+  }
+
+  .form-message.success {
+    background: #e8f5e9;
+    color: #2e7d32;
+  }
+
+  .form-message.error {
+    background: #ffebee;
+    color: #c62828;
+  }
+
+  .review-login-prompt {
+    text-align: center;
+    padding: 1.5rem;
+    background: #f9f9f9;
+    border-radius: 8px;
+    max-width: 480px;
+  }
+
+  .review-login-prompt a {
+    color: #000;
+    font-weight: 600;
+  }
+
+  .image-upload-container {
+    margin-top: 0.5rem;
+  }
+
+  .add-photo-btn {
+    background: #f5f5f5;
+    border: 2px dashed #ccc;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+  }
+
+  .add-photo-btn:hover {
+    border-color: #999;
+    background: #eee;
+  }
+
+  .image-previews {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .image-preview {
+    position: relative;
+    width: 80px;
+    height: 80px;
+  }
+
+  .image-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 4px;
+  }
+
+  .image-preview .remove-btn {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 20px;
+    height: 20px;
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .upload-hint {
+    font-size: 0.8rem;
+    color: #888;
+    margin-top: 0.5rem;
+  }
+</style>
+
+<script>
+  (function() {
+    const blockId = '{{ block_id }}';
+    const container = document.getElementById('reviews-container-' + blockId);
+    if (!container) return;
+
+    const productId = container.dataset.productId;
+    const apiUrl = '/apps/reviews';
+
+    // Fetch and display reviews
+    async function loadReviews() {
+      try {
+        const response = await fetch(`${apiUrl}?productId=${encodeURIComponent(productId)}&type=product`);
+        const data = await response.json();
+
+        // Update summary
+        const summaryEl = document.getElementById('reviews-summary-' + blockId);
+        if (summaryEl && data.summary) {
+          const stars = '★'.repeat(Math.round(data.summary.averageRating)) + '☆'.repeat(5 - Math.round(data.summary.averageRating));
+          summaryEl.innerHTML = `
+            <span class="reviews-average">${data.summary.averageRating.toFixed(1)}</span>
+            <span class="reviews-stars">${stars}</span>
+            <span class="reviews-count">(${data.summary.count} review${data.summary.count !== 1 ? 's' : ''})</span>
+          `;
+        }
+
+        // Display reviews
+        const listEl = document.getElementById('reviews-list-' + blockId);
+        if (listEl) {
+          if (data.reviews && data.reviews.length > 0) {
+            listEl.innerHTML = data.reviews.map(review => `
+              <div class="review-card">
+                <div class="review-card-header">
+                  <div>
+                    <div class="review-customer-name">
+                      ${escapeHtml(review.customerName)}
+                      ${review.verifiedPurchase ? '<span class="verified-badge">Verified Purchase</span>' : ''}
+                    </div>
+                    <div class="review-date">${new Date(review.createdAt).toLocaleDateString()}</div>
+                  </div>
+                  <div class="review-rating">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</div>
+                </div>
+                <div class="review-title">${escapeHtml(review.title)}</div>
+                <div class="review-content">${escapeHtml(review.content)}</div>
+                ${review.images && review.images.length > 0 ? `
+                  <div class="review-images ${review.images.length === 1 ? 'single-image' : ''}">
+                    ${review.images.map(img => `<img src="${escapeHtml(img.url)}" alt="Review photo" onclick="openLightbox(this.src)">`).join('')}
+                  </div>
+                ` : ''}
+                ${review.reply ? `
+                  <div class="review-reply">
+                    <div class="reply-header">Store Response:</div>
+                    <div class="reply-content">${escapeHtml(review.reply)}</div>
+                  </div>
+                ` : ''}
+              </div>
+            `).join('');
+            // Add schema.org structured data for SEO (if enabled)
+            if (data.settings?.enableSchemaMarkup) {
+              addSchemaMarkup(data.reviews, data.summary);
+            }
+          } else {
+            listEl.innerHTML = '<p class="no-reviews">No reviews yet. Be the first to review this product!</p>';
+          }
+        }
+      } catch (error) {
+        console.error('Error loading reviews:', error);
+        const listEl = document.getElementById('reviews-list-' + blockId);
+        if (listEl) listEl.innerHTML = '<p class="no-reviews">Unable to load reviews.</p>';
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Add schema.org structured data for SEO
+    function addSchemaMarkup(reviews, summary) {
+      // Remove any existing schema from this block
+      const existingSchema = document.getElementById('review-schema-' + blockId);
+      if (existingSchema) existingSchema.remove();
+
+      if (!reviews || reviews.length === 0) return;
+
+      const productName = '{{ product.title | escape }}';
+      const productUrl = '{{ product.url | prepend: shop.url }}';
+      const productImage = '{{ product.featured_image | image_url }}';
+
+      const schema = {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": productName,
+        "url": productUrl,
+        "image": productImage,
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": summary.averageRating.toFixed(1),
+          "reviewCount": summary.count,
+          "bestRating": "5",
+          "worstRating": "1"
+        },
+        "review": reviews.map(review => ({
+          "@type": "Review",
+          "author": {
+            "@type": "Person",
+            "name": review.customerName
+          },
+          "datePublished": new Date(review.createdAt).toISOString().split('T')[0],
+          "reviewRating": {
+            "@type": "Rating",
+            "ratingValue": review.rating,
+            "bestRating": "5",
+            "worstRating": "1"
+          },
+          "name": review.title,
+          "reviewBody": review.content
+        }))
+      };
+
+      const script = document.createElement('script');
+      script.type = 'application/ld+json';
+      script.id = 'review-schema-' + blockId;
+      script.textContent = JSON.stringify(schema);
+      document.head.appendChild(script);
+    }
+
+    // Lightbox functions (shared across all blocks)
+    if (!window.openLightbox) {
+      window.openLightbox = function(src) {
+        // Find any lightbox on page
+        const lightbox = document.querySelector('.image-lightbox');
+        const img = lightbox ? lightbox.querySelector('img') : null;
+        if (lightbox && img) {
+          img.src = src;
+          lightbox.classList.add('active');
+          document.body.style.overflow = 'hidden';
+        }
+      };
+
+      window.closeLightbox = function() {
+        const lightbox = document.querySelector('.image-lightbox.active');
+        if (lightbox) {
+          lightbox.classList.remove('active');
+          document.body.style.overflow = '';
+        }
+      };
+
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeLightbox();
+      });
+    }
+
+    // Star rating input (block-specific)
+    const starInput = document.getElementById('star-rating-input-' + blockId);
+    const ratingInput = document.getElementById('rating-input-' + blockId);
+    if (starInput) {
+      const stars = starInput.querySelectorAll('.star');
+      stars.forEach(star => {
+        star.addEventListener('click', () => {
+          const rating = parseInt(star.dataset.rating);
+          ratingInput.value = rating;
+          stars.forEach((s, i) => {
+            s.textContent = i < rating ? '★' : '☆';
+            s.classList.toggle('active', i < rating);
+          });
+        });
+      });
+    }
+
+    // Image upload handling (block-specific)
+    let selectedImages = [];
+    const imageInput = document.getElementById('review-images-' + blockId);
+    const imagePreviews = document.getElementById('image-previews-' + blockId);
+    const addPhotoBtn = document.getElementById('add-photo-btn-' + blockId);
+
+    if (addPhotoBtn && imageInput) {
+      addPhotoBtn.addEventListener('click', () => imageInput.click());
+    }
+
+    if (imageInput) {
+      imageInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files);
+
+        // Limit to 2 images
+        const remaining = 2 - selectedImages.length;
+        const newFiles = files.slice(0, remaining);
+
+        for (const file of newFiles) {
+          if (file.size > 5 * 1024 * 1024) {
+            showMessage('Images must be under 5MB', 'error');
+            continue;
+          }
+
+          try {
+            showMessage('Uploading image...', 'info');
+            
+            // Upload directly to Cloudinary
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('upload_preset', 'reviews_unsigned');
+            formData.append('folder', 'reviews');
+            formData.append('tags', 'review,shopify');
+
+            const response = await fetch(
+              'https://api.cloudinary.com/v1_1/dkxpqdcyx/image/upload',
+              {
+                method: 'POST',
+                body: formData,
+              }
+            );
+
+            if (!response.ok) {
+              throw new Error('Upload failed');
+            }
+
+            const data = await response.json();
+            
+            selectedImages.push({
+              name: file.name,
+              url: data.secure_url,
+              publicId: data.public_id,
+              cloudinaryUrl: true
+            });
+            
+            renderImagePreviews();
+            showMessage('Image uploaded successfully!', 'success');
+          } catch (error) {
+            console.error('Upload error:', error);
+            showMessage('Failed to upload image. Please try again.', 'error');
+          }
+        }
+
+        // Clear the input
+        imageInput.value = '';
+      });
+    }
+
+    function renderImagePreviews() {
+      if (!imagePreviews) return;
+      imagePreviews.innerHTML = selectedImages.map((img, index) => `
+        <div class="image-preview">
+          <img src="${img.cloudinaryUrl ? img.url : img.data}" alt="Preview">
+          <button type="button" class="remove-btn" data-index="${index}">×</button>
+        </div>
+      `).join('');
+
+      // Add click handlers for remove buttons
+      imagePreviews.querySelectorAll('.remove-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.index);
+          selectedImages.splice(idx, 1);
+          renderImagePreviews();
+        });
+      });
+    }
+
+    // Form submission via AJAX (block-specific)
+    const form = document.getElementById('review-form-' + blockId);
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const formData = new FormData(form);
+
+        if (!formData.get('rating')) {
+          showMessage('Please select a rating', 'error');
+          return;
+        }
+
+        // Add images as JSON
+        if (selectedImages.length > 0) {
+          formData.set('images', JSON.stringify(selectedImages));
+        }
+
+        const submitBtn = form.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Submitting...';
+
+        try {
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            body: formData
+          });
+
+          const result = await response.json();
+
+          if (response.ok) {
+            showMessage(result.message || 'Review submitted successfully!', 'success');
+            form.reset();
+            selectedImages = [];
+            renderImagePreviews();
+            if (starInput) {
+              const stars = starInput.querySelectorAll('.star');
+              stars.forEach(s => { s.textContent = '☆'; s.classList.remove('active'); });
+            }
+          } else {
+            showMessage(result.error || 'Failed to submit review', 'error');
+          }
+        } catch (error) {
+          console.error('Submit error:', error);
+          showMessage('Failed to submit review. Please try again.', 'error');
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Submit Review';
+        }
+      });
+    }
+
+    function showMessage(text, type) {
+      const msgEl = document.getElementById('form-message-' + blockId);
+      if (msgEl) {
+        msgEl.textContent = text;
+        msgEl.className = `form-message ${type}`;
+      }
+    }
+
+    // Load reviews on page load
+    loadReviews();
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Product Reviews",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Section Title",
+      "default": "Customer Reviews"
+    },
+    {
+      "type": "select",
+      "id": "block_width",
+      "label": "Card Size",
+      "default": "medium",
+      "options": [
+        { "value": "narrow", "label": "Small" },
+        { "value": "medium", "label": "Medium" },
+        { "value": "wide", "label": "Large" },
+        { "value": "full", "label": "Full width" }
+      ]
+    },
+    {
+      "type": "select",
+      "id": "layout_style",
+      "label": "Layout Style",
+      "default": "grid",
+      "options": [
+        { "value": "grid", "label": "Equal height grid" },
+        { "value": "masonry", "label": "Masonry (Pinterest-style)" }
+      ]
+    },
+    {
+      "type": "select",
+      "id": "block_alignment",
+      "label": "Alignment",
+      "default": "center",
+      "options": [
+        { "value": "left", "label": "Left" },
+        { "value": "center", "label": "Center" },
+        { "value": "right", "label": "Right" }
+      ]
+    },
+    {
+      "type": "select",
+      "id": "block_padding",
+      "label": "Padding",
+      "default": "medium",
+      "options": [
+        { "value": "none", "label": "None" },
+        { "value": "small", "label": "Small" },
+        { "value": "medium", "label": "Medium" },
+        { "value": "large", "label": "Large" }
+      ]
+    }
+  ]
+}
+{% endschema %}

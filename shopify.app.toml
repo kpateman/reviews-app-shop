@@ -1,0 +1,32 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "48e2ceb7a1c0b8b5f9ea54ea4df20bf2"
+name = "reviews-app-shop"
+application_url = "https://reviews-app-shop.fly.dev"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2026-04"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_products,read_orders,read_customers"
+
+[auth]
+redirect_urls = [ "https://reviews-app-shop.fly.dev/auth/callback" ]
+
+[app_proxy]
+url = "/app-proxy"
+subpath = "reviews"
+prefix = "apps"
