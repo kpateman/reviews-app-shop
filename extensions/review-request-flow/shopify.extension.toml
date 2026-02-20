@@ -1,0 +1,19 @@
+api_version = "2026-04"
+
+[[extensions]]
+name = "Send review request email"
+
+uid = "7dd50219-b48c-0db5-b275-726464214d9587575cdf"
+
+type = "flow_action"
+handle = "generate-review-links"
+description = "Email the customer secure, single-use review links for each product in their order."
+runtime_url = "https://reviews-app-shop.fly.dev/flow/generate-review-links"
+schema = "./schema.graphql"
+return_type_ref = "ReviewRequestResult"
+
+[settings]
+
+  [[settings.fields]]
+  type = "order_reference"
+  required = true

@@ -4,6 +4,9 @@ import cache from "../utils/cache.server";
 import { cdnify } from "../utils/images.server";
 import { checkRateLimit } from "../utils/rate-limiter.server";
 import { validateImageUrl } from "../utils/image-validation.server";
+import { updateProductReviewCount } from "../utils/metafields.server";
+import { createReviewDiscountCode } from "../utils/discount.server";
+import { sendDiscountRewardEmail } from "../utils/email.server";
 
 // Helper to return JSON responses
 function jsonResponse(data, status = 200) {
@@ -82,102 +85,58 @@ export async function loader({ request }) {
   const url = new URL(request.url);
   const productId = url.searchParams.get("productId");
   const type = url.searchParams.get("type") || "product";
-  const page = Math.max(Number(url.searchParams.get("page") || 1), 1);
   const perPage = Math.min(Number(url.searchParams.get("perPage") || 20), 50);
+  const withPhotos = url.searchParams.get("withPhotos") === "1";
+  // Support both page-based and offset-based pagination
+  const skipParam = url.searchParams.get("skip");
+  const page = skipParam == null ? Math.max(Number(url.searchParams.get("page") || 1), 1) : null;
 
   if (!shop) return jsonResponse({ error: "Unauthorized" }, 401);
 
-  const cacheKey = `app-proxy:reviews:${shop}:${type}:${productId || 'all'}:p${page}:n${perPage}`;
+  const cacheKey = `app-proxy:reviews:${shop}:${type}:${productId || 'all'}:s${skipParam || 0}:p${page || 0}:n${perPage}${withPhotos ? ':photos' : ''}`;
   try {
     const cached = await cache.get(cacheKey);
     if (cached) return jsonResponse(cached);
   } catch (e) { }
 
-  let reviews = [];
-  const skip = (page - 1) * perPage;
+  const skip = skipParam != null ? Math.max(Number(skipParam), 0) : (page - 1) * perPage;
+  const reviewSelect = {
+    id: true, rating: true, title: true, content: true,
+    customerName: true, orderId: true, createdAt: true,
+    reply: true, repliedAt: true, productTitle: true, productHandle: true,
+    images: { select: { url: true, status: true } },
+  };
 
+  // Build where clause
+  let where = { shop, status: "approved" };
   if (type === "product" && productId) {
-    reviews = await prisma.review.findMany({
-      where: { shop, status: "approved", productId: productId, type: "product" },
-      orderBy: { createdAt: "desc" },
-      take: perPage,
-      skip,
-      select: {
-        id: true,
-        rating: true,
-        title: true,
-        content: true,
-        customerName: true,
-        orderId: true,
-        createdAt: true,
-        reply: true,
-        repliedAt: true,
-        images: { select: { url: true, status: true } },
-      },
-    });
-
-    if (reviews.length === 0 && productId.includes("/")) {
-      const numericId = productId.split("/").pop();
-      reviews = await prisma.review.findMany({
-        where: { shop, status: "approved", productId: { contains: numericId }, type: "product" },
-        orderBy: { createdAt: "desc" },
-        take: perPage,
-        skip,
-        select: {
-          id: true,
-          rating: true,
-          title: true,
-          content: true,
-          customerName: true,
-          orderId: true,
-          createdAt: true,
-          reply: true,
-          repliedAt: true,
-          images: { select: { url: true, status: true } },
-        },
-      });
-    }
+    where.productId = productId;
+    where.type = "product";
   } else if (type === "company") {
-    reviews = await prisma.review.findMany({
-      where: { shop, status: "approved", type: "company" },
-      orderBy: { createdAt: "desc" },
-      take: perPage,
-      skip,
-      select: {
-        id: true,
-        rating: true,
-        title: true,
-        content: true,
-        customerName: true,
-        orderId: true,
-        createdAt: true,
-        reply: true,
-        repliedAt: true,
-        images: { select: { url: true, status: true } },
-      },
-    });
-  } else {
-    reviews = await prisma.review.findMany({
-      where: { shop, status: "approved" },
-      orderBy: { createdAt: "desc" },
-      take: perPage,
-      skip,
-      select: {
-        id: true,
-        rating: true,
-        title: true,
-        content: true,
-        customerName: true,
-        orderId: true,
-        createdAt: true,
-        reply: true,
-        repliedAt: true,
-        images: { select: { url: true, status: true } },
-      },
-    });
+    where.type = "company";
+  }
+  if (withPhotos) {
+    where.images = { some: { status: "approved" } };
   }
 
-  const avgRating = reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
+  let [reviews, totalCount, avgResult] = await Promise.all([
+    prisma.review.findMany({ where, orderBy: { createdAt: "desc" }, take: perPage, skip, select: reviewSelect }),
+    prisma.review.count({ where }),
+    prisma.review.aggregate({ _avg: { rating: true }, where }),
+  ]);
+
+  // Fallback: try numeric ID match for product reviews
+  const numericId = productId ? productId.split("/").pop() : "";
+  if (type === "product" && productId && numericId && reviews.length === 0 && totalCount === 0) {
+    const fallbackWhere = { shop, status: "approved", productId: { contains: numericId }, type: "product" };
+    [reviews, totalCount, avgResult] = await Promise.all([
+      prisma.review.findMany({ where: fallbackWhere, orderBy: { createdAt: "desc" }, take: perPage, skip, select: reviewSelect }),
+      prisma.review.count({ where: fallbackWhere }),
+      prisma.review.aggregate({ _avg: { rating: true }, where: fallbackWhere }),
+    ]);
+  }
+
+  const avgRating = avgResult._avg?.rating || 0;
 
   let shopSettings = null;
   try {
@@ -186,7 +145,7 @@ export async function loader({ request }) {
     console.error("ShopSettings fetch error (falling back to defaults):", dbErr?.message || dbErr);
     shopSettings = null;
   }
-  if (!shopSettings) shopSettings = { enableSchemaMarkup: true, requireVerifiedPurchase: false, autoApproveReviews: false };
+  if (!shopSettings) shopSettings = { enableSchemaMarkup: true, requireVerifiedPurchase: false, autoApproveMinRating: 0, reviewDiscountEnabled: false, reviewDiscountPercentage: 10, productReviewsTitle: "Customer Reviews", siteReviewsTitle: "What People Are Saying", carouselTitle: "What Our Customers Say", reviewFormTitle: "Write a Review", photoGalleryTitle: "Customer Photos" };
 
   const payload = {
     reviews: reviews.map((r) => ({
@@ -199,10 +158,21 @@ export async function loader({ request }) {
       createdAt: r.createdAt,
       reply: r.reply,
       repliedAt: r.repliedAt,
+      productTitle: r.productTitle,
+      productHandle: r.productHandle,
       images: r.images.filter((img) => img.status === "approved").map((img) => ({ url: cdnify(img.url) })),
     })),
-    summary: { count: reviews.length, averageRating: Math.round(avgRating * 10) / 10 },
-    settings: { enableSchemaMarkup: shopSettings.enableSchemaMarkup },
+    summary: { count: reviews.length, totalCount, page, perPage, averageRating: Math.round(avgRating * 10) / 10 },
+    settings: {
+      enableSchemaMarkup: shopSettings.enableSchemaMarkup,
+      widgetTitles: {
+        productReviews: shopSettings.productReviewsTitle,
+        siteReviews: shopSettings.siteReviewsTitle,
+        carousel: shopSettings.carouselTitle,
+        reviewForm: shopSettings.reviewFormTitle,
+        photoGallery: shopSettings.photoGalleryTitle,
+      },
+    },
   };
 
   try { await cache.set(cacheKey, payload, 60); } catch (e) { }
@@ -234,6 +204,7 @@ export async function action({ request }) {
 
     const productId = formData.get("productId");
     const productTitle = formData.get("productTitle");
+    const productHandle = formData.get("productHandle") || null;
     const type = formData.get("type") || "product";
     const rating = parseInt(formData.get("rating"), 10);
     const title = formData.get("title");
@@ -249,6 +220,8 @@ export async function action({ request }) {
     }
     if (rating < 1 || rating > 5) return jsonResponse({ error: "Rating must be between 1 and 5" }, 400);
     if (type === "product" && !productId) return jsonResponse({ error: "Product ID required for product reviews" }, 400);
+    if (title.length > 100) return jsonResponse({ error: "Title must be 100 characters or fewer" }, 400);
+    if (content.length > 1000) return jsonResponse({ error: "Review must be 1,000 characters or fewer" }, 400);
 
     // Rate limit: 5 reviews per hour per customer per shop
     const rl = await checkRateLimit(`rl:review:${shop}:${customerEmail}`);
@@ -257,10 +230,10 @@ export async function action({ request }) {
     }
 
     const existingReview = await prisma.review.findFirst({ where: { shop, customerEmail, productId: type === "product" ? productId : null, type } });
-    if (existingReview) return jsonResponse({ error: "You have already submitted a review for this product" }, 400);
+    if (existingReview) return jsonResponse({ error: type === "company" ? "You have already submitted a store review" : "You have already submitted a review for this product" }, 400);
 
     let shopSettings = await prisma.shopSettings.findUnique({ where: { shop } });
-    if (!shopSettings) shopSettings = { requireVerifiedPurchase: false, autoApproveReviews: false };
+    if (!shopSettings) shopSettings = { requireVerifiedPurchase: false, autoApproveMinRating: 0, reviewDiscountEnabled: false, reviewDiscountPercentage: 10 };
 
     let orderId = null;
     if (type === "product" && productId && hasVerifiedCustomer) {
@@ -272,7 +245,7 @@ export async function action({ request }) {
       return jsonResponse({ error: "Please log in to your account to leave a verified review." }, 403);
     }
 
-    const status = shopSettings.autoApproveReviews ? "approved" : "pending";
+    const status = shopSettings.autoApproveMinRating > 0 && rating >= shopSettings.autoApproveMinRating ? "approved" : "pending";
 
     const imagesJson = formData.get("images");
     let images = [];
@@ -285,6 +258,7 @@ export async function action({ request }) {
         shop,
         productId: type === "product" ? productId : null,
         productTitle: type === "product" ? productTitle : null,
+        productHandle: type === "product" ? productHandle : null,
         customerId,
         customerEmail,
         customerName,
@@ -331,8 +305,30 @@ export async function action({ request }) {
       await cache.delByPrefix(`reviews:${shop}:`);
     } catch (e) { }
 
+    // Update product review count metafield (for skeleton placeholders)
+    if (status === "approved" && type === "product" && productId) {
+      updateProductReviewCount(shop, productId).catch(() => {});
+    }
+
+    // If auto-approved and discount enabled, generate + email the discount code
+    if (status === "approved" && shopSettings.reviewDiscountEnabled && customerEmail) {
+      createReviewDiscountCode(shop, shopSettings.reviewDiscountPercentage, customerName)
+        .then((code) => {
+          if (code) {
+            sendDiscountRewardEmail({
+              to: customerEmail,
+              customerName,
+              shopName: shop.replace(".myshopify.com", ""),
+              discountCode: code,
+              discountPercentage: shopSettings.reviewDiscountPercentage,
+            }).catch((err) => console.error("Discount email error:", err));
+          }
+        })
+        .catch((err) => console.error("Discount creation error:", err));
+    }
+
     let message = orderId ? "Thank you! Your verified purchase review has been submitted" : "Thank you! Your review has been submitted";
-    message += shopSettings.autoApproveReviews ? " and is now live!" : " and is pending approval.";
+    message += status === "approved" ? " and is now live!" : " and is pending approval.";
     if (imagesSaved > 0) message += ` ${imagesSaved} photo(s) uploaded and pending approval.`;
     if (imagesRejected > 0) message += ` ${imagesRejected} photo(s) could not be saved.`;
 

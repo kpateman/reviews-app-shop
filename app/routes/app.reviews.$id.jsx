@@ -1,6 +1,9 @@
 import { redirect, useLoaderData, useNavigate, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { updateProductReviewCount } from "../utils/metafields.server";
+import { createReviewDiscountCode } from "../utils/discount.server";
+import { sendDiscountRewardEmail } from "../utils/email.server";
 
 export async function loader({ request, params }) {
   const { session } = await authenticate.admin(request);
@@ -26,23 +29,48 @@ export async function action({ request, params }) {
   const formData = await request.formData();
   const actionType = formData.get("action");
 
+  let productId = null;
+
   if (actionType === "approve") {
-    await prisma.review.update({
+    const review = await prisma.review.update({
       where: { id, shop },
       data: { status: "approved" },
+      select: { productId: true, customerEmail: true, customerName: true },
     });
+    productId = review?.productId;
+
+    // Generate and email discount code if enabled
+    const shopSettings = await prisma.shopSettings.findUnique({ where: { shop } });
+    if (shopSettings?.reviewDiscountEnabled && review?.customerEmail) {
+      const discountCode = await createReviewDiscountCode(shop, shopSettings.reviewDiscountPercentage, review.customerName);
+      if (discountCode) {
+        sendDiscountRewardEmail({
+          to: review.customerEmail,
+          customerName: review.customerName,
+          shopName: shop.replace(".myshopify.com", ""),
+          discountCode,
+          discountPercentage: shopSettings.reviewDiscountPercentage,
+        }).catch((err) => console.error("Discount email error:", err));
+      }
+    }
   } else if (actionType === "reject") {
-    await prisma.review.update({
+    const review = await prisma.review.update({
       where: { id, shop },
       data: { status: "rejected" },
+      select: { productId: true },
     });
+    productId = review?.productId;
   } else if (actionType === "delete") {
+    const review = await prisma.review.findUnique({ where: { id }, select: { productId: true } });
+    productId = review?.productId;
     await prisma.review.delete({
       where: { id, shop },
     });
+    if (productId) updateProductReviewCount(shop, productId).catch(() => {});
     return redirect("/app/reviews");
   }
 
+  if (productId) updateProductReviewCount(shop, productId).catch(() => {});
   return redirect(`/app/reviews/${id}`);
 }
 

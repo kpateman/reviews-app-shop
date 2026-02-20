@@ -1,11 +1,16 @@
 import { useLoaderData, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import prisma from "../db.server";
 import cache from "../utils/cache.server";
+import { updateProductReviewCount } from "../utils/metafields.server";
+import { createReviewDiscountCode } from "../utils/discount.server";
+import { sendDiscountRewardEmail } from "../utils/email.server";
+import { generateReviewToken, buildReviewUrl } from "../utils/review-tokens.server";
+import { deleteImageFromCloudinary } from "../utils/cloudinary.server";
 
 export async function loader({ request }) {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
 
   const url = new URL(request.url);
@@ -15,7 +20,7 @@ export async function loader({ request }) {
   const where = { shop };
   const skip = (page - 1) * perPage;
 
-  const [reviews, total] = await Promise.all([
+  const [reviews, total, productsResponse] = await Promise.all([
     prisma.review.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -41,9 +46,30 @@ export async function loader({ request }) {
       },
     }),
     prisma.review.count({ where }),
+    admin.graphql(`
+      query {
+        products(first: 100, sortKey: TITLE) {
+          edges {
+            node {
+              id
+              title
+            }
+          }
+        }
+      }
+    `).then(r => r.json()).catch(() => null),
   ]);
 
-  return { reviews, page, perPage, total };
+  const shopProducts = productsResponse?.data?.products?.edges?.map(e => ({
+    id: e.node.id,
+    title: e.node.title,
+  })) || [];
+
+  return { reviews, page, perPage, total, shop, shopProducts };
+}
+
+async function invalidateCaches(shop) {
+  try { await cache.delByPrefix(`app-proxy:reviews:${shop}:`); await cache.delByPrefix(`reviews:${shop}:`); } catch(e){}
 }
 
 export async function action({ request }) {
@@ -54,47 +80,72 @@ export async function action({ request }) {
   const reviewId = formData.get("reviewId");
 
   if (actionType === "approve") {
-    await prisma.review.update({
+    const review = await prisma.review.update({
       where: { id: reviewId, shop },
       data: { status: "approved" },
+      select: { productId: true, customerEmail: true, customerName: true },
     });
-    try { await cache.delByPrefix(`app-proxy:reviews:${shop}:`); await cache.delByPrefix(`reviews:${shop}:`); } catch(e){}
-  } else if (actionType === "reject") {
-    await prisma.review.update({
-      where: { id: reviewId, shop },
-      data: { status: "rejected" },
-    });
-    try { await cache.delByPrefix(`app-proxy:reviews:${shop}:`); await cache.delByPrefix(`reviews:${shop}:`); } catch(e){}
-  } else if (actionType === "delete") {
-    // Fetch images to delete from Cloudinary
-    const images = await prisma.reviewImage.findMany({
-      where: { reviewId },
-    });
-    // Delete from Cloudinary
-    for (const img of images) {
-      if (img.cloudinaryPublicId) {
-        try {
-          await deleteImageFromCloudinary(img.cloudinaryPublicId);
-        } catch (err) {
-          console.error("Failed to delete image from Cloudinary:", err?.message || err);
-        }
+    await invalidateCaches(shop);
+    if (review?.productId) updateProductReviewCount(shop, review.productId).catch(() => {});
+
+    const shopSettings = await prisma.shopSettings.findUnique({ where: { shop } });
+    if (shopSettings?.reviewDiscountEnabled && review?.customerEmail) {
+      const discountCode = await createReviewDiscountCode(shop, shopSettings.reviewDiscountPercentage, review.customerName);
+      if (discountCode) {
+        sendDiscountRewardEmail({
+          to: review.customerEmail,
+          customerName: review.customerName,
+          shopName: shop.replace(".myshopify.com", ""),
+          discountCode,
+          discountPercentage: shopSettings.reviewDiscountPercentage,
+        }).catch((err) => console.error("Discount email error:", err));
       }
     }
-    // Delete review (cascade will delete images from DB)
-    await prisma.review.delete({
+  } else if (actionType === "reject") {
+    const review = await prisma.review.update({
       where: { id: reviewId, shop },
+      data: { status: "rejected" },
+      select: { productId: true },
     });
-    try { await cache.delByPrefix(`app-proxy:reviews:${shop}:`); await cache.delByPrefix(`reviews:${shop}:`); } catch(e){}
+    await invalidateCaches(shop);
+    if (review?.productId) updateProductReviewCount(shop, review.productId).catch(() => {});
+  } else if (actionType === "delete") {
+    const reviewToDelete = await prisma.review.findUnique({
+      where: { id: reviewId },
+      select: { productId: true },
+    });
+    const images = await prisma.reviewImage.findMany({ where: { reviewId } });
+    for (const img of images) {
+      if (img.cloudinaryPublicId) {
+        try { await deleteImageFromCloudinary(img.cloudinaryPublicId); }
+        catch (err) { console.error("Failed to delete image from Cloudinary:", err?.message || err); }
+      }
+    }
+    await prisma.review.delete({ where: { id: reviewId, shop } });
+    await invalidateCaches(shop);
+    if (reviewToDelete?.productId) updateProductReviewCount(shop, reviewToDelete.productId).catch(() => {});
   } else if (actionType === "reply") {
     const reply = formData.get("reply");
     await prisma.review.update({
       where: { id: reviewId, shop },
-      data: {
-        reply: reply || null,
-        repliedAt: reply ? new Date() : null,
-      },
+      data: { reply: reply || null, repliedAt: reply ? new Date() : null },
     });
-    try { await cache.delByPrefix(`app-proxy:reviews:${shop}:`); await cache.delByPrefix(`reviews:${shop}:`); } catch(e){}
+    await invalidateCaches(shop);
+  } else if (actionType === "requestReview") {
+    const productId = formData.get("productId");
+    const productTitle = formData.get("productTitle");
+    const customerEmail = formData.get("customerEmail");
+    const customerName = formData.get("customerName");
+
+    if (!productId || !productTitle || !customerEmail || !customerName) {
+      return { success: false, error: "All fields are required." };
+    }
+
+    const { token } = await generateReviewToken({ shop, productId, productTitle, customerEmail, customerName });
+    const reviewUrls = {};
+    for (let i = 1; i <= 5; i++) reviewUrls[i] = buildReviewUrl(shop, token, i);
+
+    return { success: true, reviewToken: { token, reviewUrl: buildReviewUrl(shop, token), reviewUrls } };
   } else if (actionType === "toggleImage") {
     const imageId = formData.get("imageId");
     const approved = formData.get("approved") === "true";
@@ -102,22 +153,140 @@ export async function action({ request }) {
       where: { id: imageId },
       data: { status: approved ? "approved" : "rejected" },
     });
-    try { await cache.delByPrefix(`app-proxy:reviews:${shop}:`); await cache.delByPrefix(`reviews:${shop}:`); } catch(e){}
+    await invalidateCaches(shop);
+  } else if (actionType === "bulkApprove" || actionType === "bulkReject") {
+    const ids = JSON.parse(formData.get("reviewIds") || "[]");
+    if (ids.length === 0) return { success: false, error: "No reviews selected." };
+
+    const newStatus = actionType === "bulkApprove" ? "approved" : "rejected";
+
+    // Fetch reviews before updating (for metafields + discount emails)
+    const reviewsBefore = await prisma.review.findMany({
+      where: { id: { in: ids }, shop },
+      select: { id: true, productId: true, customerEmail: true, customerName: true, status: true },
+    });
+
+    await prisma.review.updateMany({
+      where: { id: { in: ids }, shop },
+      data: { status: newStatus },
+    });
+
+    await invalidateCaches(shop);
+
+    // Update metafields for affected products
+    const affectedProductIds = [...new Set(reviewsBefore.filter(r => r.productId).map(r => r.productId))];
+    for (const pid of affectedProductIds) {
+      updateProductReviewCount(shop, pid).catch(() => {});
+    }
+
+    // Send discount emails for newly approved reviews (if enabled)
+    if (actionType === "bulkApprove") {
+      const shopSettings = await prisma.shopSettings.findUnique({ where: { shop } });
+      if (shopSettings?.reviewDiscountEnabled) {
+        for (const review of reviewsBefore) {
+          if (review.status !== "approved" && review.customerEmail) {
+            createReviewDiscountCode(shop, shopSettings.reviewDiscountPercentage, review.customerName)
+              .then((code) => {
+                if (code) {
+                  sendDiscountRewardEmail({
+                    to: review.customerEmail,
+                    customerName: review.customerName,
+                    shopName: shop.replace(".myshopify.com", ""),
+                    discountCode: code,
+                    discountPercentage: shopSettings.reviewDiscountPercentage,
+                  }).catch((err) => console.error("Discount email error:", err));
+                }
+              })
+              .catch((err) => console.error("Discount creation error:", err));
+          }
+        }
+      }
+    }
+
+    return { success: true, bulkCount: reviewsBefore.length };
+  } else if (actionType === "bulkDelete") {
+    const ids = JSON.parse(formData.get("reviewIds") || "[]");
+    if (ids.length === 0) return { success: false, error: "No reviews selected." };
+
+    // Fetch reviews + images before deleting
+    const reviewsToDelete = await prisma.review.findMany({
+      where: { id: { in: ids }, shop },
+      select: { id: true, productId: true, images: { select: { cloudinaryPublicId: true } } },
+    });
+
+    // Delete images from Cloudinary
+    for (const review of reviewsToDelete) {
+      for (const img of review.images) {
+        if (img.cloudinaryPublicId) {
+          try { await deleteImageFromCloudinary(img.cloudinaryPublicId); }
+          catch (err) { console.error("Failed to delete image from Cloudinary:", err?.message || err); }
+        }
+      }
+    }
+
+    // Delete all reviews (cascade deletes images from DB)
+    await prisma.review.deleteMany({ where: { id: { in: ids }, shop } });
+
+    await invalidateCaches(shop);
+
+    // Update metafields for affected products
+    const affectedProductIds = [...new Set(reviewsToDelete.filter(r => r.productId).map(r => r.productId))];
+    for (const pid of affectedProductIds) {
+      updateProductReviewCount(shop, pid).catch(() => {});
+    }
+
+    return { success: true, bulkCount: reviewsToDelete.length };
   }
 
   return { success: true };
 }
 
 export default function ReviewsPage() {
-  const { reviews, page, perPage, total } = useLoaderData();
+  const { reviews, page, perPage, total, shop, shopProducts } = useLoaderData();
   const [statusFilter, setStatusFilter] = useState("all");
   const [ratingFilter, setRatingFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [productFilter, setProductFilter] = useState("all");
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState("");
+  const [showRequestForm, setShowRequestForm] = useState(false);
+  const [requestResult, setRequestResult] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const fetcher = useFetcher();
+  const bulkFetcher = useFetcher();
+  const requestFetcher = useFetcher();
 
-  // Get unique products from reviews
+  const handleRequestSubmit = useCallback((e) => {
+    e.preventDefault();
+    setRequestResult(null);
+    const fd = new FormData(e.target);
+    fd.set("action", "requestReview");
+    requestFetcher.submit(fd, { method: "post" });
+  }, [requestFetcher]);
+
+  const requestData = requestFetcher.data;
+  if (requestData?.reviewToken && requestResult?.token !== requestData.reviewToken.token) {
+    setRequestResult(requestData.reviewToken);
+  }
+
+  // Clear selection after bulk action completes
+  const bulkData = bulkFetcher.data;
+  if (bulkData?.success && selectedIds.size > 0 && bulkFetcher.state === "idle") {
+    setSelectedIds(new Set());
+    setShowDeleteConfirm(false);
+    setDeleteConfirmText("");
+  }
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   const products = [...new Map(
     reviews
       .filter(r => r.productId && r.productTitle)
@@ -127,9 +296,60 @@ export default function ReviewsPage() {
   const filteredReviews = reviews.filter((review) => {
     const statusMatch = statusFilter === "all" || review.status === statusFilter;
     const ratingMatch = ratingFilter === "all" || review.rating === parseInt(ratingFilter);
+    const typeMatch = typeFilter === "all" || review.type === typeFilter;
     const productMatch = productFilter === "all" || review.productId === productFilter;
-    return statusMatch && ratingMatch && productMatch;
+    return statusMatch && ratingMatch && typeMatch && productMatch;
   });
+
+  const toggleSelect = useCallback((id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    const filteredIds = filteredReviews.map(r => r.id);
+    const allSelected = filteredIds.every(id => selectedIds.has(id));
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredIds));
+    }
+  }, [filteredReviews, selectedIds]);
+
+  const selectedReviews = reviews.filter(r => selectedIds.has(r.id));
+  const selectedCount = selectedIds.size;
+
+  const submitBulkAction = useCallback((action) => {
+    const fd = new FormData();
+    fd.set("action", action);
+    fd.set("reviewIds", JSON.stringify([...selectedIds]));
+    bulkFetcher.submit(fd, { method: "post" });
+  }, [selectedIds, bulkFetcher]);
+
+  const handleBulkApprove = useCallback(() => {
+    if (confirm(`Approve ${selectedCount} review${selectedCount !== 1 ? "s" : ""}?`)) {
+      submitBulkAction("bulkApprove");
+    }
+  }, [selectedCount, submitBulkAction]);
+
+  const handleBulkReject = useCallback(() => {
+    if (confirm(`Reject ${selectedCount} review${selectedCount !== 1 ? "s" : ""}?`)) {
+      submitBulkAction("bulkReject");
+    }
+  }, [selectedCount, submitBulkAction]);
+
+  const handleBulkDelete = useCallback(() => {
+    setShowDeleteConfirm(true);
+    setDeleteConfirmText("");
+  }, []);
+
+  const confirmBulkDelete = useCallback(() => {
+    submitBulkAction("bulkDelete");
+  }, [submitBulkAction]);
 
   const starRating = (rating) => "★".repeat(rating) + "☆".repeat(5 - rating);
 
@@ -152,8 +372,118 @@ export default function ReviewsPage() {
 
   const countByRating = (stars) => reviews.filter(r => r.rating === stars).length;
 
+  // Status breakdown of selected reviews
+  const selectedPending = selectedReviews.filter(r => r.status === "pending").length;
+  const selectedApproved = selectedReviews.filter(r => r.status === "approved").length;
+  const selectedRejected = selectedReviews.filter(r => r.status === "rejected").length;
+  const selectedBreakdown = [
+    selectedPending > 0 && `${selectedPending} pending`,
+    selectedApproved > 0 && `${selectedApproved} approved`,
+    selectedRejected > 0 && `${selectedRejected} rejected`,
+  ].filter(Boolean).join(", ");
+
+  const isBulkBusy = bulkFetcher.state !== "idle";
+  const filteredIds = filteredReviews.map(r => r.id);
+  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every(id => selectedIds.has(id));
+
   return (
     <s-page heading="Reviews">
+      {/* Request Review Section */}
+      <s-box padding="base" borderWidth="base" borderRadius="base" style={{ marginBottom: "24px" }}>
+        <s-stack direction="block" gap="base">
+          <s-stack direction="inline" gap="base" align="space-between">
+            <s-text variant="headingSm">Request a Review</s-text>
+            <s-button variant="tertiary" onClick={() => { setShowRequestForm(!showRequestForm); setRequestResult(null); }}>
+              {showRequestForm ? "Close" : "Send Review Request"}
+            </s-button>
+          </s-stack>
+
+          {showRequestForm && (
+            <form onSubmit={handleRequestSubmit}>
+              <s-stack direction="block" gap="base">
+                <s-stack direction="inline" gap="base">
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 500 }}>Customer Email</label>
+                    <input name="customerEmail" type="email" required placeholder="customer@example.com"
+                      style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontSize: "14px", boxSizing: "border-box" }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 500 }}>Customer Name</label>
+                    <input name="customerName" type="text" required placeholder="Jane Doe"
+                      style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontSize: "14px", boxSizing: "border-box" }} />
+                  </div>
+                </s-stack>
+                <s-stack direction="inline" gap="base">
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 500 }}>Product</label>
+                    {shopProducts.length > 0 ? (
+                      <>
+                        <select name="productId" required
+                          onChange={(e) => {
+                            const sel = shopProducts.find(p => p.id === e.target.value);
+                            const titleInput = e.target.form.querySelector('[name="productTitle"]');
+                            if (titleInput && sel) titleInput.value = sel.title;
+                          }}
+                          style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontSize: "14px" }}>
+                          <option value="">Select a product...</option>
+                          {shopProducts.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+                        </select>
+                        <input name="productTitle" type="hidden" />
+                      </>
+                    ) : (
+                      <>
+                        <input name="productId" type="text" required placeholder="gid://shopify/Product/12345"
+                          style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontSize: "14px", boxSizing: "border-box" }} />
+                        <div style={{ marginTop: "8px" }}>
+                          <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 500 }}>Product Title</label>
+                          <input name="productTitle" type="text" required placeholder="Product name"
+                            style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontSize: "14px", boxSizing: "border-box" }} />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </s-stack>
+
+                <s-button variant="primary" type="submit" disabled={requestFetcher.state !== "idle"}>
+                  {requestFetcher.state !== "idle" ? "Generating..." : "Generate Review Link"}
+                </s-button>
+
+                {requestData?.error && (
+                  <s-text tone="critical">{requestData.error}</s-text>
+                )}
+
+                {requestResult && (
+                  <s-box padding="base" background="subdued" borderRadius="base">
+                    <s-stack direction="block" gap="base">
+                      <s-text variant="headingSm">Review link generated!</s-text>
+                      <s-text tone="subdued">Share this link with the customer, or use the star-specific URLs in your email template.</s-text>
+                      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                        <input type="text" readOnly value={requestResult.reviewUrl}
+                          style={{ flex: 1, padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontSize: "13px", background: "#f9f9f9" }} />
+                        <s-button variant="tertiary" onClick={() => copyToClipboard(requestResult.reviewUrl)}>
+                          {copied ? "Copied!" : "Copy"}
+                        </s-button>
+                      </div>
+                      <details>
+                        <summary style={{ cursor: "pointer", fontSize: "13px", color: "#666" }}>Star-specific URLs (for email templates)</summary>
+                        <div style={{ marginTop: "8px", fontSize: "13px" }}>
+                          {[1,2,3,4,5].map(n => (
+                            <div key={n} style={{ marginBottom: "4px" }}>
+                              <span style={{ color: "#f5a623" }}>{"★".repeat(n)}{"☆".repeat(5-n)}</span>{" "}
+                              <code style={{ fontSize: "12px", wordBreak: "break-all" }}>{requestResult.reviewUrls[n]}</code>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    </s-stack>
+                  </s-box>
+                )}
+              </s-stack>
+            </form>
+          )}
+        </s-stack>
+      </s-box>
+
       <div style={{ display: "flex", gap: "24px" }}>
         {/* Filters Sidebar */}
         <div style={{ width: "200px", flexShrink: 0 }}>
@@ -178,6 +508,27 @@ export default function ReviewsPage() {
                   <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
                     <input type="radio" name="status" checked={statusFilter === "rejected"} onChange={() => setStatusFilter("rejected")} />
                     <span>Rejected ({reviews.filter(r => r.status === "rejected").length})</span>
+                  </label>
+                </s-stack>
+              </s-stack>
+
+              <s-divider />
+
+              {/* Type Filter */}
+              <s-stack direction="block" gap="tight">
+                <s-text variant="headingSm">Type</s-text>
+                <s-stack direction="block" gap="tight">
+                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                    <input type="radio" name="type" checked={typeFilter === "all"} onChange={() => setTypeFilter("all")} />
+                    <span>All ({reviews.length})</span>
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                    <input type="radio" name="type" checked={typeFilter === "product"} onChange={() => setTypeFilter("product")} />
+                    <span>Product ({reviews.filter(r => r.type === "product").length})</span>
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                    <input type="radio" name="type" checked={typeFilter === "company"} onChange={() => { setTypeFilter("company"); setProductFilter("all"); }} />
+                    <span>Store ({reviews.filter(r => r.type === "company").length})</span>
                   </label>
                 </s-stack>
               </s-stack>
@@ -211,7 +562,7 @@ export default function ReviewsPage() {
                     <s-text variant="headingSm">Product</s-text>
                     <select
                       value={productFilter}
-                      onChange={(e) => setProductFilter(e.target.value)}
+                      onChange={(e) => { setProductFilter(e.target.value); if (e.target.value !== "all") setTypeFilter("product"); }}
                       style={{
                         width: "100%",
                         padding: "8px",
@@ -235,10 +586,91 @@ export default function ReviewsPage() {
         </div>
 
         {/* Reviews List */}
-        <div style={{ flex: 1 }}>
-          <s-text tone="subdued" style={{ marginBottom: "12px" }}>
-            Showing {filteredReviews.length} of {reviews.length} reviews
-          </s-text>
+        <div style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+          {/* Select all + count row */}
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+            {filteredReviews.length > 0 && (
+              <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={toggleSelectAll}
+                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                />
+                <span style={{ fontSize: "13px", color: "#666" }}>Select all</span>
+              </label>
+            )}
+            <s-text tone="subdued">
+              Showing {filteredReviews.length} of {reviews.length} reviews
+            </s-text>
+          </div>
+
+          {/* Bulk Action Bar */}
+          {selectedCount >= 2 && (
+            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued" style={{ marginBottom: "16px" }}>
+              <s-stack direction="block" gap="base">
+                <s-stack direction="inline" gap="base" align="space-between">
+                  <s-text variant="headingSm">
+                    {selectedCount} review{selectedCount !== 1 ? "s" : ""} selected
+                    <span style={{ fontWeight: "normal", color: "#666", fontSize: "13px" }}> ({selectedBreakdown})</span>
+                  </s-text>
+                  <s-button variant="tertiary" onClick={() => { setSelectedIds(new Set()); setShowDeleteConfirm(false); }}>
+                    Clear selection
+                  </s-button>
+                </s-stack>
+
+                {showDeleteConfirm ? (
+                  <s-box padding="base" borderWidth="base" borderRadius="base" style={{ background: "#fff5f5", borderColor: "#e74c3c" }}>
+                    <s-stack direction="block" gap="base">
+                      <s-text>
+                        This will permanently delete {selectedCount} review{selectedCount !== 1 ? "s" : ""} and their images. This cannot be undone.
+                      </s-text>
+                      <s-stack direction="inline" gap="base" align="start">
+                        <div>
+                          <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 500 }}>
+                            Type <strong>{selectedCount}</strong> to confirm
+                          </label>
+                          <input
+                            type="text"
+                            value={deleteConfirmText}
+                            onChange={(e) => setDeleteConfirmText(e.target.value)}
+                            placeholder={String(selectedCount)}
+                            style={{ padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontSize: "14px", width: "100px" }}
+                            autoFocus
+                          />
+                        </div>
+                        <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", paddingTop: "20px" }}>
+                          <s-button
+                            tone="critical"
+                            disabled={deleteConfirmText !== String(selectedCount) || isBulkBusy}
+                            onClick={confirmBulkDelete}
+                          >
+                            {isBulkBusy ? "Deleting..." : `Delete ${selectedCount} reviews`}
+                          </s-button>
+                          <s-button variant="tertiary" onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(""); }}>
+                            Cancel
+                          </s-button>
+                        </div>
+                      </s-stack>
+                    </s-stack>
+                  </s-box>
+                ) : (
+                  <s-stack direction="inline" gap="base">
+                    <s-button variant="primary" onClick={handleBulkApprove} disabled={isBulkBusy}>
+                      {isBulkBusy ? "Working..." : `Approve ${selectedCount}`}
+                    </s-button>
+                    <s-button onClick={handleBulkReject} disabled={isBulkBusy}>
+                      {isBulkBusy ? "Working..." : `Reject ${selectedCount}`}
+                    </s-button>
+                    <s-button tone="critical" onClick={handleBulkDelete} disabled={isBulkBusy}>
+                      Delete {selectedCount}
+                    </s-button>
+                  </s-stack>
+                )}
+              </s-stack>
+            </s-box>
+          )}
+
       <s-section>
         {filteredReviews.length === 0 ? (
           <s-box padding="loose" background="subdued" borderRadius="base">
@@ -252,10 +684,19 @@ export default function ReviewsPage() {
                 padding="base"
                 borderWidth="base"
                 borderRadius="base"
+                style={selectedIds.has(review.id) ? { outline: "2px solid #2c6ecb", outlineOffset: "-2px" } : undefined}
               >
                 <s-stack direction="block" gap="base">
                   <s-stack direction="inline" gap="base" align="space-between">
-                    <s-text variant="headingSm">{review.title}</s-text>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(review.id)}
+                        onChange={() => toggleSelect(review.id)}
+                        style={{ width: "16px", height: "16px", cursor: "pointer", flexShrink: 0 }}
+                      />
+                      <s-text variant="headingSm">{review.title}</s-text>
+                    </div>
                     <s-badge tone={statusTone(review.status)}>{review.status}</s-badge>
                   </s-stack>
 

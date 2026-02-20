@@ -141,6 +141,13 @@ export async function action({ request }) {
       return jsonResponse({ error: "Type must be 'product' or 'company'" }, { status: 400 });
     }
 
+    if (title.length > 100) {
+      return jsonResponse({ error: "Title must be 100 characters or fewer" }, { status: 400 });
+    }
+    if (content.length > 1000) {
+      return jsonResponse({ error: "Review must be 1,000 characters or fewer" }, { status: 400 });
+    }
+
     // Rate limit: 5 reviews per hour per customer per shop
     const rl = await checkRateLimit(`rl:review:${shop}:${customerEmail}`);
     if (!rl.allowed) {

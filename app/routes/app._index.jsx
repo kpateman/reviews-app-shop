@@ -49,6 +49,9 @@ export default function Index() {
       <s-button slot="primary-action" onClick={() => navigate("/app/reviews")}>
         View All Reviews
       </s-button>
+      <s-button slot="secondary-actions" onClick={() => navigate("/app/analytics")}>
+        Analytics
+      </s-button>
 
       <s-section heading="Overview">
         <s-stack direction="inline" gap="loose">
@@ -81,7 +84,7 @@ export default function Index() {
 
       {stats.pending > 0 && (
         <s-section>
-          <s-banner title="Reviews pending approval" tone="warning">
+          <s-banner heading="Reviews pending approval" tone="warning">
             <s-paragraph>
               You have {stats.pending} review{stats.pending !== 1 ? "s" : ""} waiting for moderation.
             </s-paragraph>
@@ -93,7 +96,7 @@ export default function Index() {
       <s-section heading="Recent Reviews">
         {recentReviews.length === 0 ? (
           <s-box padding="loose" background="subdued" borderRadius="base">
-            <s-text tone="subdued">No reviews yet. Reviews from your customers will appear here.</s-text>
+            <s-text tone="neutral">No reviews yet. Reviews from your customers will appear here.</s-text>
           </s-box>
         ) : (
           <s-stack direction="block" gap="base">
@@ -114,7 +117,7 @@ export default function Index() {
                     </s-badge>
                   </s-stack>
                   <s-text tone="warning">{starRating(review.rating)}</s-text>
-                  <s-text tone="subdued">
+                  <s-text tone="neutral">
                     by {review.customerName} • {new Date(review.createdAt).toLocaleDateString()}
                   </s-text>
                 </s-stack>
@@ -124,27 +127,32 @@ export default function Index() {
         )}
       </s-section>
 
-      <s-section slot="aside" heading="Quick Setup">
+      <s-section slot="aside" heading="Import Reviews">
         <s-stack direction="block" gap="base">
           <s-paragraph>
-            To display reviews on your storefront, add the <s-text variant="bodyMd" fontWeight="bold">Product Reviews</s-text> block to your theme.
+            Migrating from Yotpo or Judge.me? Import your existing reviews from a CSV export.
           </s-paragraph>
-          <s-numbered-list>
-            <s-list-item>Go to Online Store → Themes</s-list-item>
-            <s-list-item>Click Customize</s-list-item>
-            <s-list-item>Navigate to a product page</s-list-item>
-            <s-list-item>Add the "Product Reviews" app block</s-list-item>
-          </s-numbered-list>
+          <s-button onClick={() => navigate("/app/import")}>Import from CSV</s-button>
         </s-stack>
       </s-section>
 
-      <s-section slot="aside" heading="Review Types">
-        <s-stack direction="block" gap="tight">
+      <s-section slot="aside" heading="Automated Review Emails">
+        <s-stack direction="block" gap="base">
           <s-paragraph>
-            <s-text fontWeight="bold">Product Reviews:</s-text> Displayed on product pages. Customers can submit reviews after purchase.
+            Automatically email customers 7 days after their order is fulfilled, asking them to review the products they purchased. No manual work needed.
           </s-paragraph>
+          <s-banner heading="Setup in Shopify Flow" tone="info">
+            <s-numbered-list>
+              <s-list-item>Open Shopify Flow and create a new workflow. </s-list-item>
+              <s-list-item>Select the <s-text fontWeight="bold">Order fulfilled</s-text> trigger. </s-list-item>
+              <s-list-item>Add a <s-text fontWeight="bold">Wait</s-text> step (e.g. 7 days). </s-list-item>
+              <s-list-item>Add the <s-text fontWeight="bold">Send review request email</s-text> action. </s-list-item>
+              <s-list-item>Turn on the workflow. </s-list-item>
+            </s-numbered-list>
+            <s-button slot="secondary-actions" variant="secondary" href="shopify:admin/apps/flow">Open Shopify Flow</s-button>
+          </s-banner>
           <s-paragraph>
-            <s-text fontWeight="bold">Company Reviews:</s-text> General reviews about your store, displayed wherever you place the block.
+            <s-text tone="neutral">Shopify Flow is free and included with all Shopify plans. Each email includes secure, single-use review links — no customer login required.</s-text>
           </s-paragraph>
         </s-stack>
       </s-section>

@@ -25,3 +25,8 @@ type = "theme"
   name = "Reviews Carousel"
   target = "section"
   template = "blocks/reviews-carousel.liquid"
+
+  [[extensions.blocks]]
+  name = "Photo Gallery"
+  target = "section"
+  template = "blocks/photo-gallery.liquid"

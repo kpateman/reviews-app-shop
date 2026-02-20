@@ -1,0 +1,27 @@
+"A review link for a single product"
+type ProductReviewLink {
+  "The product title"
+  productTitle: String!
+  "The review page URL (no pre-selected rating)"
+  reviewUrl: String!
+  "Direct link to leave a 5-star review"
+  fiveStarUrl: String!
+  "Direct link to leave a 4-star review"
+  fourStarUrl: String!
+  "Direct link to leave a 3-star review"
+  threeStarUrl: String!
+}
+
+"Result of generating review request links for an order"
+type ReviewRequestResult {
+  "Customer's first name for personalisation"
+  customerFirstName: String!
+  "Customer's email address"
+  customerEmail: String!
+  "The order name (e.g. #1001)"
+  orderName: String!
+  "Number of products with review links"
+  productCount: Int!
+  "Review links for each product in the order"
+  products: [ProductReviewLink!]!
+}

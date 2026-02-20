@@ -1,0 +1,390 @@
+{% comment %}
+  Photo Gallery Block
+  Displays a grid of customer review photos from across the store.
+  Each photo links to the product page and opens in a lightbox on click.
+{% endcomment %}
+
+{% assign block_id = block.id | replace: '-', '' %}
+
+<div class="photo-gallery-container photo-gallery-padding-{{ block.settings.block_padding }}"
+     id="photo-gallery-{{ block_id }}"
+     data-block-id="{{ block_id }}"
+     data-columns="{{ block.settings.columns }}"
+     data-max-photos="{{ block.settings.max_photos }}"
+     data-show-more="{{ block.settings.show_more_button }}"
+     {% if product.id %}data-product-id="{{ product.id | prepend: 'gid://shopify/Product/' }}"{% endif %}>
+
+  {% if block.settings.title != blank %}
+    <h2 class="photo-gallery-title">{{ block.settings.title }}</h2>
+    {% if block.settings.subtitle != blank %}
+      <p class="photo-gallery-subtitle">{{ block.settings.subtitle }}</p>
+    {% endif %}
+  {% endif %}
+
+  <div class="photo-gallery-grid photo-gallery-cols-{{ block.settings.columns }}" id="photo-gallery-grid-{{ block_id }}">
+    {% for i in (1..6) %}
+    <div class="photo-gallery-item skeleton-photo" aria-hidden="true">
+      <div class="skeleton-photo-inner"></div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div id="photo-gallery-empty-{{ block_id }}" class="photo-gallery-empty" style="display: none;">
+    <p>No customer photos yet.</p>
+  </div>
+
+  <div id="photo-gallery-more-{{ block_id }}" class="photo-gallery-more"></div>
+
+</div>
+
+<style>
+  .photo-gallery-container {
+    font-family: inherit;
+    container-type: inline-size;
+  }
+
+  .photo-gallery-padding-none { padding: 0; }
+  .photo-gallery-padding-small { padding: 1rem 0.5rem; }
+  .photo-gallery-padding-medium { padding: 2rem 1rem; }
+  .photo-gallery-padding-large { padding: 3rem 1.5rem; }
+
+  .photo-gallery-title {
+    font-size: 1.5rem;
+    margin: 0 0 0.25rem 0;
+    text-align: center;
+  }
+
+  .photo-gallery-subtitle {
+    text-align: center;
+    color: #666;
+    margin: 0 0 1.5rem 0;
+    font-size: 0.95rem;
+  }
+
+  .photo-gallery-grid {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .photo-gallery-cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .photo-gallery-cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .photo-gallery-cols-5 { grid-template-columns: repeat(5, 1fr); }
+  .photo-gallery-cols-6 { grid-template-columns: repeat(6, 1fr); }
+
+  @container (max-width: 600px) {
+    .photo-gallery-cols-5,
+    .photo-gallery-cols-6 { grid-template-columns: repeat(3, 1fr); }
+    .photo-gallery-cols-4 { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @container (max-width: 400px) {
+    .photo-gallery-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  }
+
+  .photo-gallery-item {
+    position: relative;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: 6px;
+    cursor: pointer;
+    background: #f5f5f5;
+  }
+
+  .photo-gallery-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s ease;
+  }
+
+  .photo-gallery-item:hover img {
+    transform: scale(1.05);
+  }
+
+  .photo-gallery-item-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 0.5rem;
+    background: linear-gradient(transparent, rgba(0,0,0,0.7));
+    color: white;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+  }
+
+  .photo-gallery-item:hover .photo-gallery-item-overlay {
+    opacity: 1;
+  }
+
+  .photo-gallery-item-rating {
+    font-size: 0.75rem;
+    color: #f5a623;
+  }
+
+  .photo-gallery-item-product {
+    font-size: 0.7rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 0.15rem;
+  }
+
+  .photo-gallery-item-product a {
+    color: white;
+    text-decoration: none;
+    pointer-events: auto;
+  }
+
+  .photo-gallery-item-product a:hover {
+    text-decoration: underline;
+  }
+
+  /* Skeleton loading */
+  @keyframes photo-gallery-shimmer {
+    0% { background-position: -200px 0; }
+    100% { background-position: 200px 0; }
+  }
+
+  .skeleton-photo-inner {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, #eee 25%, #f5f5f5 50%, #eee 75%);
+    background-size: 400px 100%;
+    animation: photo-gallery-shimmer 1.5s ease-in-out infinite;
+  }
+
+  .photo-gallery-empty {
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+  }
+
+  .photo-gallery-more {
+    text-align: center;
+    margin-top: 1rem;
+  }
+
+  .photo-gallery-more-btn {
+    background: none;
+    border: 1px solid #ccc;
+    padding: 0.6rem 1.5rem;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    color: #444;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .photo-gallery-more-btn:hover {
+    border-color: #888;
+    color: #000;
+  }
+
+</style>
+
+<script>
+  (function() {
+    const blockId = '{{ block_id }}';
+    const container = document.getElementById('photo-gallery-' + blockId);
+    if (!container) return;
+
+    const maxPhotos = parseInt(container.dataset.maxPhotos) || 12;
+    const showMoreEnabled = container.dataset.showMore === 'true';
+    const productId = container.dataset.productId || '';
+    const apiUrl = '/apps/reviews';
+    const perPage = 50;
+
+    let allPhotos = [];
+    let displayedCount = 0;
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function renderPhoto(photo) {
+      const item = document.createElement('div');
+      item.className = 'photo-gallery-item';
+      item.setAttribute('data-index', photo._index);
+
+      const img = document.createElement('img');
+      img.src = photo.url;
+      img.alt = 'Customer photo' + (photo.productTitle ? ' for ' + photo.productTitle : '');
+      img.loading = 'lazy';
+      item.appendChild(img);
+
+      const overlay = document.createElement('div');
+      overlay.className = 'photo-gallery-item-overlay';
+      overlay.innerHTML =
+        '<div class="photo-gallery-item-rating">' + '\u2605'.repeat(photo.rating) + '\u2606'.repeat(5 - photo.rating) + '</div>' +
+        (photo.productTitle
+          ? '<div class="photo-gallery-item-product">' +
+              (photo.productHandle
+                ? '<a href="/products/' + encodeURIComponent(photo.productHandle) + '">' + escapeHtml(photo.productTitle) + '</a>'
+                : escapeHtml(photo.productTitle)) +
+            '</div>'
+          : '');
+      item.appendChild(overlay);
+
+      item.addEventListener('click', function(e) {
+        if (e.target.tagName === 'A') return;
+        if (photo.productHandle) {
+          window.location.href = '/products/' + encodeURIComponent(photo.productHandle);
+        }
+      });
+
+      return item;
+    }
+
+    function displayPhotos(photos) {
+      const grid = document.getElementById('photo-gallery-grid-' + blockId);
+      grid.innerHTML = '';
+
+      if (photos.length === 0) {
+        grid.style.display = 'none';
+        document.getElementById('photo-gallery-empty-' + blockId).style.display = 'block';
+        return;
+      }
+
+      photos.forEach(function(photo) {
+        grid.appendChild(renderPhoto(photo));
+      });
+      displayedCount = photos.length;
+      updateShowMore();
+    }
+
+    function updateShowMore() {
+      const moreEl = document.getElementById('photo-gallery-more-' + blockId);
+      if (!showMoreEnabled) { moreEl.innerHTML = ''; return; }
+      const remaining = allPhotos.length - displayedCount;
+      if (remaining > 0) {
+        moreEl.innerHTML = '<button class="photo-gallery-more-btn">Show more photos (' + remaining + ' more)</button>';
+        moreEl.querySelector('button').addEventListener('click', function() {
+          var next = allPhotos.slice(displayedCount, displayedCount + maxPhotos);
+          var grid = document.getElementById('photo-gallery-grid-' + blockId);
+          next.forEach(function(photo) {
+            grid.appendChild(renderPhoto(photo));
+          });
+          displayedCount += next.length;
+          updateShowMore();
+        });
+      } else {
+        moreEl.innerHTML = '';
+      }
+    }
+
+    // Fetch reviews with photos
+    async function loadPhotos() {
+      try {
+        var page = 1;
+        var hasMore = true;
+
+        while (hasMore && allPhotos.length < 200) {
+          var fetchUrl = apiUrl + '?withPhotos=1&perPage=' + perPage + '&page=' + page;
+          if (productId) {
+            fetchUrl += '&productId=' + encodeURIComponent(productId) + '&type=product';
+          }
+          var response = await fetch(fetchUrl);
+          var data = await response.json();
+
+          if (data.reviews && data.reviews.length > 0) {
+            data.reviews.forEach(function(review) {
+              if (review.images) {
+                review.images.forEach(function(img) {
+                  allPhotos.push({
+                    _index: allPhotos.length,
+                    url: img.url,
+                    rating: review.rating,
+                    customerName: review.customerName,
+                    productTitle: review.productTitle || '',
+                    productHandle: review.productHandle || '',
+                    reviewTitle: review.title,
+                  });
+                });
+              }
+            });
+          }
+
+          hasMore = data.reviews && data.reviews.length === perPage && data.summary && data.summary.totalCount > page * perPage;
+          page++;
+        }
+
+        displayPhotos(allPhotos.slice(0, maxPhotos));
+
+        // Apply app-configured title if set
+        if (data && data.settings && data.settings.widgetTitles && data.settings.widgetTitles.photoGallery) {
+          var titleEl = document.querySelector('#photo-gallery-' + blockId + ' .photo-gallery-title');
+          if (titleEl) titleEl.textContent = data.settings.widgetTitles.photoGallery;
+        }
+      } catch (error) {
+        console.error('Error loading photo gallery:', error);
+        var grid = document.getElementById('photo-gallery-grid-' + blockId);
+        grid.innerHTML = '';
+        document.getElementById('photo-gallery-empty-' + blockId).style.display = 'block';
+      }
+    }
+
+    loadPhotos();
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Photo Gallery",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Title",
+      "default": "Customer Photos"
+    },
+    {
+      "type": "text",
+      "id": "subtitle",
+      "label": "Subtitle",
+      "default": "See what our customers are sharing"
+    },
+    {
+      "type": "range",
+      "id": "columns",
+      "label": "Columns",
+      "min": 3,
+      "max": 6,
+      "step": 1,
+      "default": 4
+    },
+    {
+      "type": "range",
+      "id": "max_photos",
+      "label": "Photos to show",
+      "min": 3,
+      "max": 24,
+      "step": 1,
+      "default": 12
+    },
+    {
+      "type": "checkbox",
+      "id": "show_more_button",
+      "label": "Show 'load more' button",
+      "default": true
+    },
+    {
+      "type": "select",
+      "id": "block_padding",
+      "label": "Padding",
+      "default": "medium",
+      "options": [
+        { "value": "none", "label": "None" },
+        { "value": "small", "label": "Small" },
+        { "value": "medium", "label": "Medium" },
+        { "value": "large", "label": "Large" }
+      ]
+    }
+  ]
+}
+{% endschema %}

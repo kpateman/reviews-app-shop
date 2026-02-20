@@ -5,7 +5,7 @@
 
 {% assign block_id = block.id | replace: '-', '' %}
 
-<div class="reviews-carousel-container" id="reviews-carousel-{{ block_id }}" data-block-id="{{ block_id }}">
+<div class="reviews-carousel-container" id="reviews-carousel-{{ block_id }}" data-block-id="{{ block_id }}" data-slides-per-view="{{ block.settings.slides_per_view }}" style="--slides-per-view: {{ block.settings.slides_per_view }}">
   <div class="carousel-header">
     <h2 class="carousel-title">{{ block.settings.title }}</h2>
   </div>
@@ -91,8 +91,8 @@
   }
 
   .carousel-slide {
-    flex: 0 0 calc(33.333% - 0.67rem);
-    min-width: 280px;
+    flex: 0 0 calc((100% - (var(--slides-per-view) - 1) * 1rem) / var(--slides-per-view));
+    min-width: 0;
     background: #fff;
     border: 1px solid #e5e5e5;
     border-radius: 12px;
@@ -101,15 +101,11 @@
   }
 
   @media (max-width: 900px) {
-    .carousel-slide {
-      flex: 0 0 calc(50% - 0.5rem);
-    }
+    .reviews-carousel-container { --slides-per-view: 2 !important; }
   }
 
   @media (max-width: 600px) {
-    .carousel-slide {
-      flex: 0 0 100%;
-    }
+    .reviews-carousel-container { --slides-per-view: 1 !important; }
 
     .carousel-btn {
       display: none;
@@ -221,8 +217,10 @@
     const nextBtn = document.getElementById('next-' + blockId);
     const dotsContainer = document.getElementById('dots-' + blockId);
 
+    const configuredPerView = parseInt(document.getElementById('reviews-carousel-' + blockId).dataset.slidesPerView) || 3;
+
     let currentIndex = 0;
-    let slidesPerView = 3;
+    let slidesPerView = configuredPerView;
     let reviews = [];
     let autoPlayInterval = null;
 
@@ -230,15 +228,16 @@
       if (window.innerWidth <= 600) {
         slidesPerView = 1;
       } else if (window.innerWidth <= 900) {
-        slidesPerView = 2;
+        slidesPerView = Math.min(configuredPerView, 2);
       } else {
-        slidesPerView = 3;
+        slidesPerView = configuredPerView;
       }
     }
 
     async function loadReviews() {
       try {
-        const response = await fetch('/apps/reviews?type=all');
+        // Fetch enough reviews to have maxReviews after filtering by min rating
+        const response = await fetch('/apps/reviews?perPage=50');
         const data = await response.json();
 
         // Filter by minimum rating and limit count
@@ -249,6 +248,12 @@
         renderCarousel();
         if (autoPlay && reviews.length > slidesPerView) {
           startAutoPlay();
+        }
+
+        // Apply app-configured title if set
+        if (data && data.settings && data.settings.widgetTitles && data.settings.widgetTitles.carousel) {
+          const titleEl = container.querySelector('.carousel-title');
+          if (titleEl) titleEl.textContent = data.settings.widgetTitles.carousel;
         }
       } catch (error) {
         console.error('Error loading reviews:', error);
@@ -403,10 +408,19 @@
     },
     {
       "type": "range",
+      "id": "slides_per_view",
+      "label": "Reviews visible at once",
+      "min": 1,
+      "max": 5,
+      "step": 1,
+      "default": 3
+    },
+    {
+      "type": "range",
       "id": "max_reviews",
       "label": "Maximum Reviews to Show",
       "min": 3,
-      "max": 12,
+      "max": 24,
       "step": 1,
       "default": 6
     },

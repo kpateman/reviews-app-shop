@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(fly deploy:*)",
+      "mcp__shopify-dev-mcp__introspect_graphql_schema",
+      "mcp__shopify-dev-mcp__validate_graphql_codeblocks",
+      "Bash(npx shopify app deploy:*)"
+    ]
+  }
+}

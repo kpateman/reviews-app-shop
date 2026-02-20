@@ -4,10 +4,18 @@
 {% endcomment %}
 
 {% assign block_id = block.id | replace: '-', '' %}
+{% assign review_count = product.metafields.reviews_app.review_count.value | default: 0 | times: 1 %}
+{% assign skeleton_count = review_count | at_most: 2 %}
+{% if product.id %}
+  {% assign review_type = 'product' %}
+{% else %}
+  {% assign review_type = 'company' %}
+{% endif %}
 
 <div class="reviews-container reviews-width-{{ block.settings.block_width }} reviews-layout-{{ block.settings.layout_style }} reviews-align-{{ block.settings.block_alignment }} reviews-padding-{{ block.settings.block_padding }}"
      id="reviews-container-{{ block_id }}"
-     data-product-id="{{ product.id | prepend: 'gid://shopify/Product/' }}"
+     data-product-id="{% if product.id %}{{ product.id | prepend: 'gid://shopify/Product/' }}{% endif %}"
+     data-review-type="{{ review_type }}"
      data-block-id="{{ block_id }}">
 
   <div class="reviews-header">
@@ -20,90 +28,290 @@
   </div>
 
   <div class="reviews-list" id="reviews-list-{{ block_id }}">
-    <p class="reviews-loading">Loading reviews...</p>
-  </div>
-</div>
+    {% if skeleton_count == 0 %}
+    <p class="no-reviews">{% if product.id %}No reviews yet. Be the first to review this product!{% else %}No reviews yet. Be the first to share your experience!{% endif %}</p>
+    {% endif %}
+    {% for i in (1..skeleton_count) %}
+    <div class="review-card skeleton-card" aria-hidden="true">
+      <div class="review-card-body">
+        <div class="skeleton-row skeleton-name"></div>
+        <div class="skeleton-row skeleton-stars"></div>
+        <div class="skeleton-row skeleton-title"></div>
+        <div class="skeleton-row skeleton-line"></div>
+        <div class="skeleton-row skeleton-line"></div>
+        <div class="skeleton-row skeleton-line short"></div>
+      </div>
+      <div class="skeleton-row skeleton-image"></div>
+    </div>
+    {% endfor %}
+    {% if customer %}
+    <div class="review-form-slot" id="review-form-slot-{{ block_id }}">
+      <h3>Write a Review</h3>
+      <form id="review-form-{{ block_id }}" class="review-form" action="/apps/reviews" method="POST">
+        {% if product.id %}
+          <input type="hidden" name="productId" value="{{ product.id | prepend: 'gid://shopify/Product/' }}">
+          <input type="hidden" name="productTitle" value="{{ product.title | escape }}">
+          <input type="hidden" name="productHandle" value="{{ product.handle }}">
+          <input type="hidden" name="type" value="product">
+        {% else %}
+          <input type="hidden" name="type" value="company">
+        {% endif %}
+        <input type="hidden" name="customerId" value="{{ customer.id | prepend: 'gid://shopify/Customer/' }}">
+        <input type="hidden" name="customerEmail" value="{{ customer.email }}">
+        <input type="hidden" name="customerName" value="{{ customer.name | default: customer.email }}">
 
-  {% if customer %}
-  <div class="review-form-container" id="review-form-container-{{ block_id }}">
-    <h3>Write a Review</h3>
-    <form id="review-form-{{ block_id }}" class="review-form" action="/apps/reviews" method="POST">
-      <input type="hidden" name="productId" value="{{ product.id | prepend: 'gid://shopify/Product/' }}">
-      <input type="hidden" name="productTitle" value="{{ product.title | escape }}">
-      <input type="hidden" name="customerId" value="{{ customer.id | prepend: 'gid://shopify/Customer/' }}">
-      <input type="hidden" name="customerEmail" value="{{ customer.email }}">
-      <input type="hidden" name="customerName" value="{{ customer.name | default: customer.email }}">
-      <input type="hidden" name="type" value="product">
-
-      <div class="form-group">
-        <label>Rating</label>
-        <div class="star-rating-input" id="star-rating-input-{{ block_id }}">
-          <span class="star" data-rating="1">☆</span>
-          <span class="star" data-rating="2">☆</span>
-          <span class="star" data-rating="3">☆</span>
-          <span class="star" data-rating="4">☆</span>
-          <span class="star" data-rating="5">☆</span>
+        <div class="form-group">
+          <label>Rating</label>
+          <div class="star-rating-input" id="star-rating-input-{{ block_id }}">
+            <span class="star" data-rating="1">☆</span>
+            <span class="star" data-rating="2">☆</span>
+            <span class="star" data-rating="3">☆</span>
+            <span class="star" data-rating="4">☆</span>
+            <span class="star" data-rating="5">☆</span>
+          </div>
+          <input type="hidden" name="rating" id="rating-input-{{ block_id }}" required>
         </div>
-        <input type="hidden" name="rating" id="rating-input-{{ block_id }}" required>
-      </div>
 
-      <div class="form-group">
-        <label for="review-title-{{ block_id }}">Title</label>
-        <input type="text" id="review-title-{{ block_id }}" name="title" required maxlength="100" placeholder="Summarize your experience">
-      </div>
-
-      <div class="form-group">
-        <label for="review-content-{{ block_id }}">Your Review</label>
-        <textarea id="review-content-{{ block_id }}" name="content" required rows="4" placeholder="Share the details of your experience..."></textarea>
-      </div>
-
-      <div class="form-group">
-        <label>Add Photos (optional, max 2)</label>
-        <div class="image-upload-container">
-          <input type="file" id="review-images-{{ block_id }}" accept="image/*" multiple style="display: none;">
-          <button type="button" class="add-photo-btn" id="add-photo-btn-{{ block_id }}">
-            + Add Photos
-          </button>
-          <div id="image-previews-{{ block_id }}" class="image-previews"></div>
+        <div class="form-group">
+          <label for="review-title-{{ block_id }}">Title</label>
+          <input type="text" id="review-title-{{ block_id }}" name="title" required maxlength="100" placeholder="Summarize your experience">
+          <span class="char-counter" id="title-counter-{{ block_id }}"></span>
         </div>
-        <p class="upload-hint">Images will be reviewed before appearing publicly.</p>
-      </div>
 
-      <button type="submit" class="submit-review-btn">Submit Review</button>
-      <p class="form-message" id="form-message-{{ block_id }}"></p>
-    </form>
+        <div class="form-group">
+          <label for="review-content-{{ block_id }}">Your Review</label>
+          <textarea id="review-content-{{ block_id }}" name="content" required rows="4" placeholder="Share the details of your experience..."></textarea>
+          <span class="char-counter" id="content-counter-{{ block_id }}"></span>
+        </div>
+
+        <div class="form-group">
+          <label>Add Photos (optional, max 2)</label>
+          <div class="image-upload-container">
+            <input type="file" id="review-images-{{ block_id }}" accept="image/*" multiple style="display: none;">
+            <button type="button" class="add-photo-btn" id="add-photo-btn-{{ block_id }}">
+              + Add Photos
+            </button>
+            <div id="image-previews-{{ block_id }}" class="image-previews"></div>
+          </div>
+          <p class="upload-hint">Images will be reviewed before appearing publicly.</p>
+        </div>
+
+        <button type="submit" class="submit-review-btn">Submit Review</button>
+        <p class="form-message" id="form-message-{{ block_id }}"></p>
+      </form>
+    </div>
+    {% else %}
+    <div class="review-form-slot review-login-prompt" id="review-form-slot-{{ block_id }}">
+      <p><a href="/account/login">Log in</a> to write a review</p>
+    </div>
+    {% endif %}
   </div>
-  {% else %}
-  <div class="review-login-prompt">
-    <p><a href="/account/login">Log in</a> to write a review</p>
-  </div>
+  <div id="reviews-show-more-{{ block_id }}" class="reviews-show-more"></div>
+
+  {% comment %} Inject aggregateRating into the theme's existing Product JSON-LD {% endcomment %}
+  {% assign avg_rating = product.metafields.reviews_app.average_rating.value | default: 0 | times: 1.0 %}
+  {% if product.id and review_count > 0 and avg_rating > 0 %}
+    <script>
+      (function() {
+        var productId = '{{ product.id }}';
+        var avgRating = '{{ avg_rating }}';
+        var reviewCount = '{{ review_count }}';
+
+        function findProductJsonLd() {
+          var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+          for (var i = 0; i < scripts.length; i++) {
+            try {
+              var data = JSON.parse(scripts[i].textContent);
+              if (data['@type'] === 'Product' && !data.aggregateRating) {
+                return scripts[i];
+              }
+            } catch (e) {}
+          }
+          return null;
+        }
+
+        function injectRatingData(scriptEl, reviews) {
+          try {
+            var data = JSON.parse(scriptEl.textContent);
+            data.aggregateRating = {
+              '@type': 'AggregateRating',
+              'ratingValue': avgRating,
+              'reviewCount': reviewCount,
+              'bestRating': '5',
+              'worstRating': '1'
+            };
+            if (reviews && reviews.length > 0) {
+              data.review = reviews.slice(0, 10).map(function(r) {
+                return {
+                  '@type': 'Review',
+                  'reviewRating': {
+                    '@type': 'Rating',
+                    'ratingValue': String(r.rating),
+                    'bestRating': '5',
+                    'worstRating': '1'
+                  },
+                  'author': { '@type': 'Person', 'name': r.customerName },
+                  'name': r.title,
+                  'reviewBody': r.content,
+                  'datePublished': r.createdAt ? r.createdAt.split('T')[0] : undefined
+                };
+              });
+            }
+            scriptEl.textContent = JSON.stringify(data);
+          } catch (e) {}
+        }
+
+        var scriptEl = findProductJsonLd();
+        if (!scriptEl) return;
+
+        // Fetch reviews to include individual review markup
+        fetch('/apps/reviews?productId=' + encodeURIComponent(productId) + '&perPage=10')
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            injectRatingData(scriptEl, data.reviews || []);
+          })
+          .catch(function() {
+            // Fallback: inject just the aggregate rating without individual reviews
+            injectRatingData(scriptEl, []);
+          });
+      })();
+    </script>
   {% endif %}
 
-<!-- Shared lightbox (only need one per page) -->
-<div class="image-lightbox" id="image-lightbox-{{ block_id }}" onclick="window.closeLightbox && closeLightbox()">
-  <span class="close-btn">&times;</span>
-  <img src="" alt="Full size review photo" id="lightbox-image-{{ block_id }}">
+  {% comment %} Inject aggregateRating into the theme's existing Organization JSON-LD for company/store reviews {% endcomment %}
+  {% unless product.id %}
+    <script>
+      (function() {
+        function findOrgJsonLd() {
+          var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+          for (var i = 0; i < scripts.length; i++) {
+            try {
+              var data = JSON.parse(scripts[i].textContent);
+              if (data['@type'] === 'Organization' && !data.aggregateRating) {
+                return scripts[i];
+              }
+            } catch (e) {}
+          }
+          return null;
+        }
+
+        function injectOrgRatingData(scriptEl, summary, reviews) {
+          try {
+            var data = JSON.parse(scriptEl.textContent);
+            data.aggregateRating = {
+              '@type': 'AggregateRating',
+              'ratingValue': String(summary.averageRating),
+              'reviewCount': String(summary.totalCount),
+              'bestRating': '5',
+              'worstRating': '1'
+            };
+            if (reviews && reviews.length > 0) {
+              data.review = reviews.slice(0, 10).map(function(r) {
+                return {
+                  '@type': 'Review',
+                  'reviewRating': {
+                    '@type': 'Rating',
+                    'ratingValue': String(r.rating),
+                    'bestRating': '5',
+                    'worstRating': '1'
+                  },
+                  'author': { '@type': 'Person', 'name': r.customerName },
+                  'name': r.title,
+                  'reviewBody': r.content,
+                  'datePublished': r.createdAt ? r.createdAt.split('T')[0] : undefined
+                };
+              });
+            }
+            scriptEl.textContent = JSON.stringify(data);
+          } catch (e) {}
+        }
+
+        function createStandaloneOrgLd(summary, reviews) {
+          var ld = {
+            '@context': 'https://schema.org',
+            '@type': 'Organization',
+            'name': {{ shop.name | json }},
+            'url': '{{ shop.url }}',
+            'aggregateRating': {
+              '@type': 'AggregateRating',
+              'ratingValue': String(summary.averageRating),
+              'reviewCount': String(summary.totalCount),
+              'bestRating': '5',
+              'worstRating': '1'
+            }
+          };
+          if (reviews && reviews.length > 0) {
+            ld.review = reviews.slice(0, 10).map(function(r) {
+              return {
+                '@type': 'Review',
+                'reviewRating': {
+                  '@type': 'Rating',
+                  'ratingValue': String(r.rating),
+                  'bestRating': '5',
+                  'worstRating': '1'
+                },
+                'author': { '@type': 'Person', 'name': r.customerName },
+                'name': r.title,
+                'reviewBody': r.content,
+                'datePublished': r.createdAt ? r.createdAt.split('T')[0] : undefined
+              };
+            });
+          }
+          var script = document.createElement('script');
+          script.type = 'application/ld+json';
+          script.textContent = JSON.stringify(ld);
+          document.head.appendChild(script);
+        }
+
+        fetch('/apps/reviews?type=company&skip=0&perPage=10')
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            if (!data.summary || data.summary.totalCount === 0) return;
+            var scriptEl = findOrgJsonLd();
+            if (scriptEl) {
+              injectOrgRatingData(scriptEl, data.summary, data.reviews || []);
+            } else {
+              createStandaloneOrgLd(data.summary, data.reviews || []);
+            }
+          })
+          .catch(function() {});
+      })();
+    </script>
+  {% endunless %}
+
+  <!-- Lightbox for full-size image viewing -->
+  <div class="image-lightbox" id="image-lightbox-{{ block_id }}" onclick="window.closeLightbox && closeLightbox()">
+    <span class="close-btn">&times;</span>
+    <img src="" alt="Full size review photo" id="lightbox-image-{{ block_id }}">
+  </div>
 </div>
 
 <style>
   .reviews-container {
     font-family: inherit;
-    min-width: 280px;
+    min-width: 0;
     box-sizing: border-box;
+    container-type: inline-size;
+    overflow: hidden;
   }
 
-  /* Card size options (for grid layout) */
-  .reviews-width-narrow .review-card { flex: 1 1 180px; max-width: 260px; }
-  .reviews-width-medium .review-card { flex: 1 1 250px; max-width: 350px; }
-  .reviews-width-wide .review-card { flex: 1 1 320px; max-width: 450px; }
-  .reviews-width-full .review-card { flex: 1 1 100%; max-width: 100%; }
+  /* Card size options (for grid layout) — applies to both review cards and the form */
+  .reviews-width-narrow .review-card,
+  .reviews-width-narrow .review-form-slot { flex: 1 1 180px; max-width: 260px; }
+  .reviews-width-medium .review-card,
+  .reviews-width-medium .review-form-slot { flex: 1 1 250px; max-width: 350px; }
+  .reviews-width-wide .review-card,
+  .reviews-width-wide .review-form-slot { flex: 1 1 320px; max-width: 450px; }
+  .reviews-width-full .review-card,
+  .reviews-width-full .review-form-slot { flex: 1 1 100%; max-width: 100%; }
 
   /* Masonry layout style */
   .reviews-layout-masonry .reviews-list {
     display: block;
     column-gap: 1rem;
   }
-  .reviews-layout-masonry .review-card {
+  .reviews-layout-masonry .review-card,
+  .reviews-layout-masonry .review-form-slot {
     break-inside: avoid;
     margin-bottom: 1rem;
     max-width: 100%;
@@ -169,17 +377,81 @@
     color: #666;
   }
 
-  .reviews-loading {
+  /* Skeleton loading cards */
+  @keyframes shimmer {
+    0% { background-position: -200px 0; }
+    100% { background-position: 200px 0; }
+  }
+
+  .skeleton-card {
+    pointer-events: none;
+    min-height: 320px;
+  }
+
+  .reviews-width-full .skeleton-card {
+    min-height: 180px;
+  }
+
+  .skeleton-row {
+    background: linear-gradient(90deg, #eee 25%, #f5f5f5 50%, #eee 75%);
+    background-size: 400px 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+    border-radius: 4px;
+    margin-bottom: 0.6rem;
+  }
+
+  .skeleton-name { width: 35%; height: 1rem; }
+  .skeleton-stars { width: 45%; height: 1.1rem; }
+  .skeleton-title { width: 70%; height: 1rem; margin-top: 0.25rem; }
+  .skeleton-line { width: 100%; height: 0.85rem; }
+  .skeleton-line.short { width: 60%; }
+  .skeleton-image { width: 100%; height: 140px; border-radius: 6px; margin-top: 0.5rem; }
+
+  /* Show more button */
+  .reviews-show-more {
     text-align: center;
-    color: #666;
-    padding: 2rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .show-more-btn {
+    background: none;
+    border: 1px solid #ccc;
+    padding: 0.6rem 1.5rem;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    color: #444;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .show-more-btn:hover {
+    border-color: #888;
+    color: #000;
+  }
+
+  .show-more-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .reviews-list {
-    margin-bottom: 2rem;
     display: flex;
     flex-wrap: wrap;
     gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+  }
+
+  /* Form sits in the same flex flow as review cards — sizing comes from .reviews-width-* rules */
+  .review-form-slot {
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    padding: 1.25rem;
+    box-sizing: border-box;
+  }
+
+  .review-form-slot h3 {
+    margin: 0 0 1rem 0;
   }
 
   .review-card {
@@ -190,11 +462,60 @@
     overflow: hidden;
   }
 
-  /* Compact layout for small screens - stack cards */
-  @media (max-width: 480px) {
-    .review-card {
+  .review-card-body {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  /* Full-width: image beside text (scales proportionally, no hard breakpoint) */
+  .reviews-width-full .review-card {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .reviews-width-full .review-card-body {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .reviews-width-full .review-images {
+    flex: 0 0 30%;
+    max-width: 280px;
+    margin-top: 0;
+    display: block;
+    overflow: hidden;
+  }
+
+  .reviews-width-full .review-images img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 220px;
+    object-fit: contain;
+    margin-bottom: 0.5rem;
+  }
+
+  .reviews-width-full .review-images img:last-child {
+    margin-bottom: 0;
+  }
+
+  .reviews-width-full .skeleton-image {
+    flex: 0 0 30%;
+    max-width: 200px;
+    height: 140px;
+    margin-top: 0;
+  }
+
+  /* Compact layout for small screens - full-width cards and form */
+  @container (max-width: 480px) {
+    .review-card,
+    .review-form-slot {
       flex: 1 1 100% !important;
       max-width: 100% !important;
+      min-width: 0 !important;
     }
 
     .reviews-title {
@@ -342,18 +663,9 @@
     color: #666;
     background: #f9f9f9;
     border-radius: 8px;
+    flex: 1 1 100%;
   }
 
-  .review-form-container {
-    border-top: 1px solid #e5e5e5;
-    padding-top: 2rem;
-    margin-top: 2rem;
-    max-width: 480px;
-  }
-
-  .review-form-container h3 {
-    margin-bottom: 1rem;
-  }
 
 
   .form-group {
@@ -436,10 +748,7 @@
 
   .review-login-prompt {
     text-align: center;
-    padding: 1.5rem;
     background: #f9f9f9;
-    border-radius: 8px;
-    max-width: 480px;
   }
 
   .review-login-prompt a {
@@ -506,6 +815,28 @@
     color: #888;
     margin-top: 0.5rem;
   }
+
+  .char-counter {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+    color: #999;
+    text-align: right;
+    opacity: 0;
+    transition: opacity 0.3s ease, color 0.3s ease;
+  }
+
+  .char-counter.visible {
+    opacity: 1;
+  }
+
+  .char-counter.warn {
+    color: #e67e22;
+  }
+
+  .char-counter.over {
+    color: #e74c3c;
+  }
 </style>
 
 <script>
@@ -514,69 +845,169 @@
     const container = document.getElementById('reviews-container-' + blockId);
     if (!container) return;
 
-    const productId = container.dataset.productId;
+    const productId = container.dataset.productId || '';
+    const reviewType = container.dataset.reviewType || 'product';
+    const isProductPage = reviewType === 'product' && productId;
     const apiUrl = '/apps/reviews';
 
-    // Fetch and display reviews
-    async function loadReviews() {
+    // Pagination state (configurable via block settings)
+    const INITIAL_PER_PAGE = {{ block.settings.initial_reviews | default: 4 }};
+    const LOAD_MORE_PER_PAGE = {{ block.settings.load_more_count | default: 8 }};
+    let loadedCount = 0;
+    let totalReviews = 0;
+    let allLoadedReviews = [];
+
+    function renderReviewCard(review) {
+      return `
+        <div class="review-card">
+          <div class="review-card-body">
+            <div class="review-card-header">
+              <div>
+                <div class="review-customer-name">
+                  ${escapeHtml(review.customerName)}
+                  ${review.verifiedPurchase ? '<span class="verified-badge">Verified Purchase</span>' : ''}
+                </div>
+                <div class="review-date">${new Date(review.createdAt).toLocaleDateString()}</div>
+              </div>
+              <div class="review-rating">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</div>
+            </div>
+            <div class="review-title">${escapeHtml(review.title)}</div>
+            <div class="review-content">${escapeHtml(review.content)}</div>
+            ${review.reply ? `
+              <div class="review-reply">
+                <div class="reply-header">Store Response:</div>
+                <div class="reply-content">${escapeHtml(review.reply)}</div>
+              </div>
+            ` : ''}
+          </div>
+          ${review.images && review.images.length > 0 ? `
+            <div class="review-images ${review.images.length === 1 ? 'single-image' : ''}">
+              ${review.images.map(img => `<img src="${escapeHtml(img.url)}" alt="Review photo" onclick="openLightbox(this.src)">`).join('')}
+            </div>
+          ` : ''}
+        </div>`;
+    }
+
+    function updateShowMoreButton() {
+      const showMoreEl = document.getElementById('reviews-show-more-' + blockId);
+      if (!showMoreEl) return;
+      const remaining = totalReviews - loadedCount;
+      if (remaining > 0) {
+        showMoreEl.innerHTML = `<button class="show-more-btn" id="show-more-btn-${blockId}">Show more reviews (${remaining} more)</button>`;
+        document.getElementById('show-more-btn-' + blockId).addEventListener('click', loadMore);
+      } else {
+        showMoreEl.innerHTML = '';
+      }
+    }
+
+    async function loadMore() {
+      const btn = document.getElementById('show-more-btn-' + blockId);
+      if (btn) { btn.disabled = true; btn.textContent = 'Loading...'; }
+
       try {
-        const response = await fetch(`${apiUrl}?productId=${encodeURIComponent(productId)}&type=product`);
+        const fetchUrl = isProductPage
+          ? `${apiUrl}?productId=${encodeURIComponent(productId)}&type=product&skip=${loadedCount}&perPage=${LOAD_MORE_PER_PAGE}`
+          : `${apiUrl}?type=${reviewType}&skip=${loadedCount}&perPage=${LOAD_MORE_PER_PAGE}`;
+        const response = await fetch(fetchUrl);
         const data = await response.json();
 
-        // Update summary
+        if (data.reviews && data.reviews.length > 0) {
+          const listEl = document.getElementById('reviews-list-' + blockId);
+          const formSlot = document.getElementById('review-form-slot-' + blockId);
+          if (listEl) {
+            const newHtml = data.reviews.map(renderReviewCard).join('');
+            if (formSlot) {
+              formSlot.insertAdjacentHTML('beforebegin', newHtml);
+            } else {
+              listEl.insertAdjacentHTML('beforeend', newHtml);
+            }
+          }
+          allLoadedReviews = allLoadedReviews.concat(data.reviews);
+          loadedCount += data.reviews.length;
+        }
+        updateShowMoreButton();
+      } catch (error) {
+        console.error('Error loading more reviews:', error);
+        if (btn) { btn.disabled = false; btn.textContent = 'Try again'; }
+      }
+    }
+
+    // Initial load — fetch first 2 reviews
+    async function loadReviews() {
+      try {
+        const fetchUrl = isProductPage
+          ? `${apiUrl}?productId=${encodeURIComponent(productId)}&type=product&skip=0&perPage=${INITIAL_PER_PAGE}`
+          : `${apiUrl}?type=${reviewType}&skip=0&perPage=${INITIAL_PER_PAGE}`;
+        const response = await fetch(fetchUrl);
+        const data = await response.json();
+
+        totalReviews = data.summary?.totalCount || data.summary?.count || 0;
+
+        // Update summary with total count
         const summaryEl = document.getElementById('reviews-summary-' + blockId);
         if (summaryEl && data.summary) {
           const stars = '★'.repeat(Math.round(data.summary.averageRating)) + '☆'.repeat(5 - Math.round(data.summary.averageRating));
           summaryEl.innerHTML = `
             <span class="reviews-average">${data.summary.averageRating.toFixed(1)}</span>
             <span class="reviews-stars">${stars}</span>
-            <span class="reviews-count">(${data.summary.count} review${data.summary.count !== 1 ? 's' : ''})</span>
+            <span class="reviews-count">(${totalReviews} review${totalReviews !== 1 ? 's' : ''})</span>
           `;
         }
 
-        // Display reviews
+        // Display reviews — remove skeletons, insert cards before form-slot
         const listEl = document.getElementById('reviews-list-' + blockId);
+        const formSlot = document.getElementById('review-form-slot-' + blockId);
         if (listEl) {
+          // Remove skeleton cards (and any previous review cards / messages)
+          Array.from(listEl.children).forEach(child => {
+            if (child !== formSlot) child.remove();
+          });
+
           if (data.reviews && data.reviews.length > 0) {
-            listEl.innerHTML = data.reviews.map(review => `
-              <div class="review-card">
-                <div class="review-card-header">
-                  <div>
-                    <div class="review-customer-name">
-                      ${escapeHtml(review.customerName)}
-                      ${review.verifiedPurchase ? '<span class="verified-badge">Verified Purchase</span>' : ''}
-                    </div>
-                    <div class="review-date">${new Date(review.createdAt).toLocaleDateString()}</div>
-                  </div>
-                  <div class="review-rating">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</div>
-                </div>
-                <div class="review-title">${escapeHtml(review.title)}</div>
-                <div class="review-content">${escapeHtml(review.content)}</div>
-                ${review.images && review.images.length > 0 ? `
-                  <div class="review-images ${review.images.length === 1 ? 'single-image' : ''}">
-                    ${review.images.map(img => `<img src="${escapeHtml(img.url)}" alt="Review photo" onclick="openLightbox(this.src)">`).join('')}
-                  </div>
-                ` : ''}
-                ${review.reply ? `
-                  <div class="review-reply">
-                    <div class="reply-header">Store Response:</div>
-                    <div class="reply-content">${escapeHtml(review.reply)}</div>
-                  </div>
-                ` : ''}
-              </div>
-            `).join('');
-            // Add schema.org structured data for SEO (if enabled)
-            if (data.settings?.enableSchemaMarkup) {
-              addSchemaMarkup(data.reviews, data.summary);
+            const cardsHtml = data.reviews.map(renderReviewCard).join('');
+            if (formSlot) {
+              formSlot.insertAdjacentHTML('beforebegin', cardsHtml);
+            } else {
+              listEl.insertAdjacentHTML('afterbegin', cardsHtml);
             }
+            allLoadedReviews = data.reviews;
+            loadedCount = data.reviews.length;
+            updateShowMoreButton();
+
+            // JSON-LD structured data is now rendered server-side in Liquid above
           } else {
-            listEl.innerHTML = '<p class="no-reviews">No reviews yet. Be the first to review this product!</p>';
+            const noReviewsMsg = isProductPage ? 'No reviews yet. Be the first to review this product!' : 'No reviews yet. Be the first to share your experience!';
+            const noReviewsHtml = '<p class="no-reviews">' + noReviewsMsg + '</p>';
+            if (formSlot) {
+              formSlot.insertAdjacentHTML('beforebegin', noReviewsHtml);
+            } else {
+              listEl.insertAdjacentHTML('afterbegin', noReviewsHtml);
+            }
+          }
+        }
+        // Apply app-configured title if set
+        if (data && data.settings && data.settings.widgetTitles) {
+          const appTitle = isProductPage ? data.settings.widgetTitles.productReviews : data.settings.widgetTitles.siteReviews;
+          if (appTitle) {
+            const titleEl = container.querySelector('.reviews-title');
+            if (titleEl) titleEl.textContent = appTitle;
           }
         }
       } catch (error) {
         console.error('Error loading reviews:', error);
         const listEl = document.getElementById('reviews-list-' + blockId);
-        if (listEl) listEl.innerHTML = '<p class="no-reviews">Unable to load reviews.</p>';
+        const formSlot = document.getElementById('review-form-slot-' + blockId);
+        if (listEl) {
+          Array.from(listEl.children).forEach(child => {
+            if (child !== formSlot) child.remove();
+          });
+          const errHtml = '<p class="no-reviews">Unable to load reviews.</p>';
+          if (formSlot) {
+            formSlot.insertAdjacentHTML('beforebegin', errHtml);
+          } else {
+            listEl.insertAdjacentHTML('afterbegin', errHtml);
+          }
+        }
       }
     }
 
@@ -584,56 +1015,6 @@
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
-    }
-
-    // Add schema.org structured data for SEO
-    function addSchemaMarkup(reviews, summary) {
-      // Remove any existing schema from this block
-      const existingSchema = document.getElementById('review-schema-' + blockId);
-      if (existingSchema) existingSchema.remove();
-
-      if (!reviews || reviews.length === 0) return;
-
-      const productName = '{{ product.title | escape }}';
-      const productUrl = '{{ product.url | prepend: shop.url }}';
-      const productImage = '{{ product.featured_image | image_url }}';
-
-      const schema = {
-        "@context": "https://schema.org",
-        "@type": "Product",
-        "name": productName,
-        "url": productUrl,
-        "image": productImage,
-        "aggregateRating": {
-          "@type": "AggregateRating",
-          "ratingValue": summary.averageRating.toFixed(1),
-          "reviewCount": summary.count,
-          "bestRating": "5",
-          "worstRating": "1"
-        },
-        "review": reviews.map(review => ({
-          "@type": "Review",
-          "author": {
-            "@type": "Person",
-            "name": review.customerName
-          },
-          "datePublished": new Date(review.createdAt).toISOString().split('T')[0],
-          "reviewRating": {
-            "@type": "Rating",
-            "ratingValue": review.rating,
-            "bestRating": "5",
-            "worstRating": "1"
-          },
-          "name": review.title,
-          "reviewBody": review.content
-        }))
-      };
-
-      const script = document.createElement('script');
-      script.type = 'application/ld+json';
-      script.id = 'review-schema-' + blockId;
-      script.textContent = JSON.stringify(schema);
-      document.head.appendChild(script);
     }
 
     // Lightbox functions (shared across all blocks)
@@ -766,6 +1147,48 @@
       });
     }
 
+    // Character counters
+    const TITLE_MAX = 100;
+    const CONTENT_MAX = 1000;
+
+    function setupCounter(inputEl, counterEl, max) {
+      if (!inputEl || !counterEl) return;
+      const showAt = Math.floor(max * 0.8);
+      const warnAt = Math.floor(max * 0.9);
+
+      inputEl.addEventListener('input', () => {
+        const len = inputEl.value.length;
+        const remaining = max - len;
+
+        if (len >= showAt) {
+          counterEl.classList.add('visible');
+          if (len > max) {
+            counterEl.textContent = `${len.toLocaleString()} / ${max.toLocaleString()} — a little long, trim to submit`;
+            counterEl.className = 'char-counter visible over';
+          } else if (len >= warnAt) {
+            counterEl.textContent = `${remaining.toLocaleString()} character${remaining !== 1 ? 's' : ''} remaining`;
+            counterEl.className = 'char-counter visible warn';
+          } else {
+            counterEl.textContent = `${len.toLocaleString()} / ${max.toLocaleString()}`;
+            counterEl.className = 'char-counter visible';
+          }
+        } else {
+          counterEl.classList.remove('visible');
+        }
+      });
+    }
+
+    setupCounter(
+      document.getElementById('review-title-' + blockId),
+      document.getElementById('title-counter-' + blockId),
+      TITLE_MAX
+    );
+    setupCounter(
+      document.getElementById('review-content-' + blockId),
+      document.getElementById('content-counter-' + blockId),
+      CONTENT_MAX
+    );
+
     // Form submission via AJAX (block-specific)
     const form = document.getElementById('review-form-' + blockId);
     if (form) {
@@ -776,6 +1199,17 @@
 
         if (!formData.get('rating')) {
           showMessage('Please select a rating', 'error');
+          return;
+        }
+
+        const contentVal = formData.get('content') || '';
+        const titleVal = formData.get('title') || '';
+        if (titleVal.length > TITLE_MAX) {
+          showMessage(`Title is too long — please keep it under ${TITLE_MAX} characters.`, 'error');
+          return;
+        }
+        if (contentVal.length > CONTENT_MAX) {
+          showMessage(`Review is a bit long — please trim it to ${CONTENT_MAX.toLocaleString()} characters.`, 'error');
           return;
         }
 
@@ -886,6 +1320,24 @@
         { "value": "medium", "label": "Medium" },
         { "value": "large", "label": "Large" }
       ]
+    },
+    {
+      "type": "range",
+      "id": "initial_reviews",
+      "label": "Reviews shown initially",
+      "min": 1,
+      "max": 20,
+      "step": 1,
+      "default": 4
+    },
+    {
+      "type": "range",
+      "id": "load_more_count",
+      "label": "Reviews per 'Show more' click",
+      "min": 1,
+      "max": 20,
+      "step": 1,
+      "default": 8
     }
   ]
 }

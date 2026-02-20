@@ -38,6 +38,7 @@ model Review {
   shop            String
   productId       String?  // Shopify product GID, null for company reviews
   productTitle    String?
+  productHandle   String?  // Shopify product URL handle, for linking to product pages
   customerId      String?  // Shopify customer GID
   customerEmail   String
   customerName    String
@@ -75,12 +76,38 @@ model ReviewImage {
   @@index([reviewId])
 }
 
+model ReviewRequestToken {
+  id            String    @id @default(cuid())
+  token         String    @unique
+  shop          String
+  productId     String
+  productTitle  String
+  customerId    String?
+  customerEmail String
+  customerName  String
+  orderId       String?
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([shop, customerEmail, productId])
+  @@index([expiresAt])
+}
+
 model ShopSettings {
   id                    String   @id @default(cuid())
   shop                  String   @unique
   requireVerifiedPurchase Boolean @default(false)
-  autoApproveReviews    Boolean @default(false)
+  autoApproveMinRating  Int     @default(0)  // 0 = off, 1-5 = auto-approve reviews with this rating or above
   enableSchemaMarkup    Boolean @default(true)
+  reviewDiscountEnabled Boolean @default(false)
+  reviewDiscountPercentage Int  @default(10)  // Percentage off (1-100)
+  // Widget titles (shown as headings on the storefront)
+  productReviewsTitle   String  @default("Customer Reviews")
+  siteReviewsTitle      String  @default("What People Are Saying")
+  carouselTitle         String  @default("What Our Customers Say")
+  reviewFormTitle       String  @default("Write a Review")
+  photoGalleryTitle     String  @default("Customer Photos")
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }
