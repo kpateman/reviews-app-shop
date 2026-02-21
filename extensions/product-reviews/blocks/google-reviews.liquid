@@ -42,6 +42,17 @@
     gap: 1rem;
   }
 
+  /* Stretch the last card to fill the row if it would be alone */
+  {% if block.settings.columns == '2' %}
+  #gr-reviews-{{ block_id }} .gr-reviews-list .gr-review-card:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+  {% elsif block.settings.columns == '3' %}
+  #gr-reviews-{{ block_id }} .gr-reviews-list .gr-review-card:last-child:nth-child(3n+1) {
+    grid-column: 1 / -1;
+  }
+  {% endif %}
+
   @media (max-width: 640px) {
     #gr-reviews-{{ block_id }} .gr-reviews-list {
       grid-template-columns: 1fr;
