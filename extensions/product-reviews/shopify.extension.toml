@@ -30,3 +30,8 @@ type = "theme"
   name = "Photo Gallery"
   target = "section"
   template = "blocks/photo-gallery.liquid"
+
+  [[extensions.blocks]]
+  name = "Google Rating"
+  target = "section"
+  template = "blocks/google-rating.liquid"

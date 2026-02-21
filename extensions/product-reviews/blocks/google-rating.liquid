@@ -1,0 +1,118 @@
+{% comment %}
+  Google Rating Badge Block
+  Displays the store's Google rating and review count.
+  Add this block anywhere in the theme editor.
+{% endcomment %}
+
+{% assign badge_id = block.id | replace: '-', '' %}
+
+<div class="gr-wrapper gr-align-{{ block.settings.alignment }}" id="gr-{{ badge_id }}">
+  <a class="gr-badge" href="#" target="_blank" rel="noopener noreferrer" id="gr-link-{{ badge_id }}" style="font-size: {{ block.settings.font_size }}px;">
+    <svg class="gr-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="{{ block.settings.font_size | plus: 4 }}" height="{{ block.settings.font_size | plus: 4 }}">
+      <path fill="#4285F4" d="M24 9.5c3.1 0 5.8 1.1 8 2.9l6-6C34.5 3.2 29.6 1 24 1 14.8 1 6.9 6.5 3.5 14.4l7 5.4C12.2 13.6 17.6 9.5 24 9.5z"/>
+      <path fill="#34A853" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.4 5.7c4.3-4 6.2-9.9 6.2-16.9z"/>
+      <path fill="#FBBC05" d="M10.5 28.2A14.6 14.6 0 0 1 9.5 24c0-1.5.3-2.9.7-4.2l-7-5.4A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.5 10.8l8-6.6z"/>
+      <path fill="#EA4335" d="M24 47c5.6 0 10.4-1.9 13.9-5.1l-7.4-5.7c-1.8 1.2-4.1 1.9-6.5 1.9-6.4 0-11.8-4.1-13.5-9.9l-8 6.6C6.9 41.5 14.8 47 24 47z"/>
+    </svg>
+    <span class="gr-stars" id="gr-stars-{{ badge_id }}">☆☆☆☆☆</span>
+    <span class="gr-text" id="gr-text-{{ badge_id }}">Loading…</span>
+  </a>
+</div>
+
+<style>
+  #gr-{{ badge_id }} .gr-wrapper,
+  .gr-wrapper {
+    display: block;
+  }
+
+  .gr-align-left { text-align: left; }
+  .gr-align-center { text-align: center; }
+  .gr-align-right { text-align: right; }
+
+  .gr-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid #dadce0;
+    border-radius: 6px;
+    text-decoration: none;
+    color: inherit;
+    white-space: nowrap;
+    transition: background 0.15s;
+  }
+
+  .gr-badge:hover {
+    background: #f8f9fa;
+  }
+
+  .gr-logo {
+    flex-shrink: 0;
+  }
+
+  .gr-stars {
+    color: #f5a623;
+    letter-spacing: 1px;
+  }
+
+  .gr-text {
+    color: #444;
+  }
+</style>
+
+<script>
+  (function() {
+    var badgeId = '{{ badge_id }}';
+    var starsEl = document.getElementById('gr-stars-' + badgeId);
+    var textEl  = document.getElementById('gr-text-'  + badgeId);
+    var linkEl  = document.getElementById('gr-link-'  + badgeId);
+
+    fetch('/apps/reviews?type=company&perPage=1')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var g = data.google;
+        if (!g || g.rating == null) {
+          document.getElementById('gr-' + badgeId).style.display = 'none';
+          return;
+        }
+        var filled = Math.round(g.rating);
+        starsEl.textContent = '★'.repeat(filled) + '☆'.repeat(5 - filled);
+        var countText = g.totalRatings != null ? ' · ' + g.totalRatings.toLocaleString() + ' reviews' : '';
+        textEl.textContent = g.rating.toFixed(1) + ' on Google' + countText;
+        linkEl.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(window.location.hostname);
+      })
+      .catch(function() {
+        document.getElementById('gr-' + badgeId).style.display = 'none';
+      });
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Google Rating",
+  "target": "section",
+  "settings": [
+    {
+      "type": "select",
+      "id": "alignment",
+      "label": "Alignment",
+      "options": [
+        { "value": "left",   "label": "Left"   },
+        { "value": "center", "label": "Center" },
+        { "value": "right",  "label": "Right"  }
+      ],
+      "default": "left"
+    },
+    {
+      "type": "range",
+      "id": "font_size",
+      "label": "Font size",
+      "min": 12,
+      "max": 24,
+      "step": 1,
+      "default": 15,
+      "unit": "px"
+    }
+  ]
+}
+{% endschema %}

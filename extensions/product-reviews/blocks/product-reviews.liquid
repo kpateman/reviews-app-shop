@@ -377,35 +377,6 @@
     color: #666;
   }
 
-  .google-rating-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.3rem 0.65rem;
-    border: 1px solid #dadce0;
-    border-radius: 4px;
-    text-decoration: none;
-    color: inherit;
-    font-size: 0.875rem;
-    white-space: nowrap;
-  }
-
-  .google-rating-badge:hover {
-    background: #f8f9fa;
-  }
-
-  .google-rating-stars {
-    color: #f5a623;
-    letter-spacing: 1px;
-  }
-
-  .google-rating-score {
-    color: #444;
-  }
-
-  .google-logo {
-    flex-shrink: 0;
-  }
 
   /* Skeleton loading cards */
   @keyframes shimmer {
@@ -982,26 +953,6 @@
             <span class="reviews-stars">${stars}</span>
             <span class="reviews-count">(${totalReviews} review${totalReviews !== 1 ? 's' : ''})</span>
           `;
-        }
-
-        // Google rating badge
-        if (data.google && data.google.rating != null) {
-          const googleBadgeId = 'google-badge-' + blockId;
-          if (!document.getElementById(googleBadgeId)) {
-            const badge = document.createElement('a');
-            badge.id = googleBadgeId;
-            badge.className = 'google-rating-badge';
-            badge.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(window.location.hostname);
-            badge.target = '_blank';
-            badge.rel = 'noopener noreferrer';
-            const googleStars = '★'.repeat(Math.round(data.google.rating)) + '☆'.repeat(5 - Math.round(data.google.rating));
-            const countText = data.google.totalRatings != null ? ` · ${data.google.totalRatings.toLocaleString()} reviews` : '';
-            badge.innerHTML = `<svg class="google-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="18" height="18"><path fill="#4285F4" d="M24 9.5c3.1 0 5.8 1.1 8 2.9l6-6C34.5 3.2 29.6 1 24 1 14.8 1 6.9 6.5 3.5 14.4l7 5.4C12.2 13.6 17.6 9.5 24 9.5z"/><path fill="#34A853" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.4 5.7c4.3-4 6.2-9.9 6.2-16.9z"/><path fill="#FBBC05" d="M10.5 28.2A14.6 14.6 0 0 1 9.5 24c0-1.5.3-2.9.7-4.2l-7-5.4A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.5 10.8l8-6.6z"/><path fill="#EA4335" d="M24 47c5.6 0 10.4-1.9 13.9-5.1l-7.4-5.7c-1.8 1.2-4.1 1.9-6.5 1.9-6.4 0-11.8-4.1-13.5-9.9l-8 6.6C6.9 41.5 14.8 47 24 47z"/></svg><span class="google-rating-stars">${googleStars}</span><span class="google-rating-score">${data.google.rating.toFixed(1)} on Google${countText}</span>`;
-            const headerEl = document.getElementById('reviews-summary-' + blockId);
-            if (headerEl && headerEl.parentElement) {
-              headerEl.parentElement.appendChild(badge);
-            }
-          }
         }
 
         // Display reviews — remove skeletons, insert cards before form-slot
