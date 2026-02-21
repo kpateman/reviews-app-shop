@@ -6,7 +6,7 @@
 
 {% assign badge_id = block.id | replace: '-', '' %}
 
-<div class="gr-wrapper gr-align-{{ block.settings.alignment }}" id="gr-{{ badge_id }}">
+<div class="gr-wrapper gr-align-{{ block.settings.alignment }}" id="gr-{{ badge_id }}" style="display:none">
   <a class="gr-badge" href="#" target="_blank" rel="noopener noreferrer" id="gr-link-{{ badge_id }}" style="font-size: {{ block.settings.font_size }}px;">
     <svg class="gr-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="{{ block.settings.font_size | plus: 4 }}" height="{{ block.settings.font_size | plus: 4 }}">
       <path fill="#4285F4" d="M24 9.5c3.1 0 5.8 1.1 8 2.9l6-6C34.5 3.2 29.6 1 24 1 14.8 1 6.9 6.5 3.5 14.4l7 5.4C12.2 13.6 17.6 9.5 24 9.5z"/>
@@ -14,8 +14,8 @@
       <path fill="#FBBC05" d="M10.5 28.2A14.6 14.6 0 0 1 9.5 24c0-1.5.3-2.9.7-4.2l-7-5.4A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.5 10.8l8-6.6z"/>
       <path fill="#EA4335" d="M24 47c5.6 0 10.4-1.9 13.9-5.1l-7.4-5.7c-1.8 1.2-4.1 1.9-6.5 1.9-6.4 0-11.8-4.1-13.5-9.9l-8 6.6C6.9 41.5 14.8 47 24 47z"/>
     </svg>
-    <span class="gr-stars" id="gr-stars-{{ badge_id }}">☆☆☆☆☆</span>
-    <span class="gr-text" id="gr-text-{{ badge_id }}">Loading…</span>
+    <span class="gr-stars" id="gr-stars-{{ badge_id }}"></span>
+    <span class="gr-text" id="gr-text-{{ badge_id }}"></span>
   </a>
 </div>
 
@@ -71,19 +71,15 @@
       .then(function(r) { return r.json(); })
       .then(function(data) {
         var g = data.google;
-        if (!g || g.rating == null) {
-          document.getElementById('gr-' + badgeId).style.display = 'none';
-          return;
-        }
+        if (!g || g.rating == null) return;
         var filled = Math.round(g.rating);
         starsEl.textContent = '★'.repeat(filled) + '☆'.repeat(5 - filled);
         var countText = g.totalRatings != null ? ' · ' + g.totalRatings.toLocaleString() + ' reviews' : '';
         textEl.textContent = g.rating.toFixed(1) + ' on Google' + countText;
         linkEl.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(window.location.hostname);
+        document.getElementById('gr-' + badgeId).style.display = '';
       })
-      .catch(function() {
-        document.getElementById('gr-' + badgeId).style.display = 'none';
-      });
+      .catch(function() {});
   })();
 </script>
 
