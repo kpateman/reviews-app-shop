@@ -14,7 +14,7 @@
       <path fill="#FBBC05" d="M10.5 28.2A14.6 14.6 0 0 1 9.5 24c0-1.5.3-2.9.7-4.2l-7-5.4A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.5 10.8l8-6.6z"/>
       <path fill="#EA4335" d="M24 47c5.6 0 10.4-1.9 13.9-5.1l-7.4-5.7c-1.8 1.2-4.1 1.9-6.5 1.9-6.4 0-11.8-4.1-13.5-9.9l-8 6.6C6.9 41.5 14.8 47 24 47z"/>
     </svg>
-    <span class="gr-reviews-title" id="gr-reviews-title-{{ block_id }}">{{ block.settings.heading }}</span>
+    <span class="gr-reviews-title">{{ block.settings.heading }}</span>
   </div>
   <div class="gr-reviews-list" id="gr-reviews-list-{{ block_id }}"></div>
 </div>
@@ -22,93 +22,105 @@
 <style>
   #gr-reviews-{{ block_id }} {
     font-size: {{ block.settings.font_size }}px;
-    max-width: {{ block.settings.max_width }}px;
   }
 
-  .gr-reviews-wrapper { font-family: inherit; }
-
-  .gr-reviews-header {
+  #gr-reviews-{{ block_id }} .gr-reviews-header {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-bottom: 1rem;
+    margin-bottom: 1.25rem;
   }
 
-  .gr-reviews-title {
-    font-size: 1.1em;
+  #gr-reviews-{{ block_id }} .gr-reviews-title {
+    font-size: 1.15em;
     font-weight: 600;
   }
 
-  .gr-reviews-logo { flex-shrink: 0; }
-
-  .gr-reviews-list {
-    display: flex;
-    flex-direction: column;
+  #gr-reviews-{{ block_id }} .gr-reviews-list {
+    display: grid;
+    grid-template-columns: repeat({{ block.settings.columns }}, 1fr);
     gap: 1rem;
   }
 
-  .gr-review-card {
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    padding: 1rem;
-    background: #fff;
+  @media (max-width: 640px) {
+    #gr-reviews-{{ block_id }} .gr-reviews-list {
+      grid-template-columns: 1fr;
+    }
   }
 
-  .gr-review-top {
+  #gr-reviews-{{ block_id }} .gr-review-card {
+    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  #gr-reviews-{{ block_id }} .gr-review-top {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    margin-bottom: 0.4rem;
+    gap: 0.65rem;
   }
 
-  .gr-review-avatar {
-    width: 2em;
-    height: 2em;
+  #gr-reviews-{{ block_id }} .gr-review-avatar {
+    width: 2.2em;
+    height: 2.2em;
     border-radius: 50%;
     flex-shrink: 0;
+    object-fit: cover;
   }
 
-  .gr-review-avatar-fallback {
-    width: 2em;
-    height: 2em;
+  #gr-reviews-{{ block_id }} .gr-review-avatar-fallback {
+    width: 2.2em;
+    height: 2.2em;
     border-radius: 50%;
     background: #4285F4;
     color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.85em;
-    font-weight: 600;
+    font-size: 0.9em;
+    font-weight: 700;
     flex-shrink: 0;
   }
 
-  .gr-review-meta {
+  #gr-reviews-{{ block_id }} .gr-review-meta {
     flex: 1;
     min-width: 0;
   }
 
-  .gr-review-author {
+  #gr-reviews-{{ block_id }} .gr-review-author {
     font-weight: 600;
+    display: block;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: inherit;
+    text-decoration: none;
   }
 
-  .gr-review-time {
+  #gr-reviews-{{ block_id }} .gr-review-author:hover {
+    text-decoration: underline;
+  }
+
+  #gr-reviews-{{ block_id }} .gr-review-time {
     color: #888;
     font-size: 0.8em;
+    margin-top: 1px;
   }
 
-  .gr-review-stars {
+  #gr-reviews-{{ block_id }} .gr-review-stars {
     color: #f5a623;
+    font-size: 1.1em;
     letter-spacing: 1px;
-    white-space: nowrap;
   }
 
-  .gr-review-text {
-    color: #333;
-    line-height: 1.5;
-    margin-top: 0.4rem;
+  #gr-reviews-{{ block_id }} .gr-review-text {
+    color: #444;
+    line-height: 1.55;
+    font-size: 0.95em;
   }
 </style>
 
@@ -147,8 +159,8 @@
                 authorHtml +
                 '<div class="gr-review-time">' + (rev.relativeTime || '') + '</div>' +
               '</div>' +
-              '<div class="gr-review-stars">' + stars + '</div>' +
             '</div>' +
+            '<div class="gr-review-stars">' + stars + '</div>' +
             (rev.text ? '<div class="gr-review-text">' + rev.text.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>' : '');
           list.appendChild(card);
         });
@@ -180,6 +192,17 @@
       "default": 5
     },
     {
+      "type": "select",
+      "id": "columns",
+      "label": "Columns",
+      "options": [
+        { "value": "1", "label": "1 column" },
+        { "value": "2", "label": "2 columns" },
+        { "value": "3", "label": "3 columns" }
+      ],
+      "default": "2"
+    },
+    {
       "type": "range",
       "id": "font_size",
       "label": "Font size",
@@ -187,16 +210,6 @@
       "max": 20,
       "step": 1,
       "default": 14,
-      "unit": "px"
-    },
-    {
-      "type": "range",
-      "id": "max_width",
-      "label": "Max width",
-      "min": 300,
-      "max": 900,
-      "step": 50,
-      "default": 600,
       "unit": "px"
     }
   ]
