@@ -108,6 +108,8 @@ model ShopSettings {
   carouselTitle         String  @default("What Our Customers Say")
   reviewFormTitle       String  @default("Write a Review")
   photoGalleryTitle     String  @default("Customer Photos")
+  googlePlaceId         String?
+  googleApiKey          String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }

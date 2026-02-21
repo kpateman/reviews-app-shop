@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLoaderData, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -18,13 +19,31 @@ export async function loader({ request }) {
     settings = { shop, requireVerifiedPurchase: false, autoApproveMinRating: 0, enableSchemaMarkup: true, reviewDiscountEnabled: false, reviewDiscountPercentage: 10 };
   }
 
-  return { settings };
+  return {
+    settings,
+    googlePlaceId: settings.googlePlaceId ?? "",
+    googleApiKey: settings.googleApiKey ?? "",
+  };
 }
 
 export async function action({ request }) {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
   const formData = await request.formData();
+
+  const intent = formData.get("intent");
+
+  // Handle Google settings save separately
+  if (intent === "google") {
+    const googlePlaceId = (formData.get("googlePlaceId") || "").trim().slice(0, 300);
+    const googleApiKey = (formData.get("googleApiKey") || "").trim().slice(0, 300);
+    await prisma.shopSettings.upsert({
+      where: { shop },
+      update: { googlePlaceId, googleApiKey },
+      create: { shop, googlePlaceId, googleApiKey },
+    });
+    return { success: true, intent: "google" };
+  }
 
   const requireVerifiedPurchase = formData.get("requireVerifiedPurchase") === "true";
   const autoApproveMinRating = Math.min(5, Math.max(0, parseInt(formData.get("autoApproveMinRating"), 10) || 0));
@@ -68,9 +87,26 @@ export async function action({ request }) {
   }
 }
 
+const inputStyle = { padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc", fontSize: "0.9rem", width: "100%", maxWidth: "400px" };
+
 export default function SettingsPage() {
-  const { settings } = useLoaderData();
+  const { settings, googlePlaceId: initialPlaceId, googleApiKey: initialApiKey } = useLoaderData();
   const fetcher = useFetcher();
+  const googleFetcher = useFetcher();
+
+  const [googlePlaceId, setGooglePlaceId] = useState(initialPlaceId);
+  const [googleApiKey, setGoogleApiKey] = useState(initialApiKey);
+
+  const saveGoogle = () => {
+    const formData = new FormData();
+    formData.set("intent", "google");
+    formData.set("googlePlaceId", googlePlaceId);
+    formData.set("googleApiKey", googleApiKey);
+    googleFetcher.submit(formData, { method: "post" });
+  };
+
+  const googleSaving = googleFetcher.state === "submitting";
+  const googleSaved = googleFetcher.state === "idle" && googleFetcher.data?.intent === "google" && googleFetcher.data?.success;
 
   const submitSettings = (overrides) => {
     const formData = new FormData();
@@ -216,6 +252,46 @@ export default function SettingsPage() {
         </s-box>
       </s-section>
 
+      <s-section heading="Google Reviews">
+        <s-box padding="base" borderWidth="base" borderRadius="base">
+          <s-stack direction="block" gap="loose">
+            <s-paragraph>
+              Show your Google star rating and total review count in your storefront widgets.
+              Enter your Google Place ID and a Places API key to enable this.
+            </s-paragraph>
+            <s-stack direction="block" gap="tight">
+              <s-text variant="headingSm">Place ID</s-text>
+              <s-text tone="subdued">Find your Place ID at developers.google.com/maps/documentation/javascript/examples/places-placeid-finder</s-text>
+              <input
+                value={googlePlaceId}
+                onChange={(e) => setGooglePlaceId(e.target.value)}
+                placeholder="ChIJ..."
+                style={inputStyle}
+                maxLength={300}
+              />
+            </s-stack>
+            <s-stack direction="block" gap="tight">
+              <s-text variant="headingSm">Places API Key</s-text>
+              <s-text tone="subdued">Create a key in Google Cloud Console with the Places API enabled. Restrict the key to Places API only.</s-text>
+              <input
+                type="password"
+                value={googleApiKey}
+                onChange={(e) => setGoogleApiKey(e.target.value)}
+                placeholder="AIza..."
+                style={inputStyle}
+                maxLength={300}
+              />
+            </s-stack>
+            <s-stack direction="inline" gap="base" align="start">
+              <s-button variant="primary" onClick={saveGoogle} disabled={googleSaving}>
+                {googleSaving ? "Saving…" : "Save Google settings"}
+              </s-button>
+              {googleSaved && <s-text tone="success">Saved!</s-text>}
+            </s-stack>
+          </s-stack>
+        </s-box>
+      </s-section>
+
       <s-section slot="aside" heading="About Settings">
         <s-stack direction="block" gap="base">
           <s-paragraph>
@@ -226,6 +302,9 @@ export default function SettingsPage() {
           </s-paragraph>
           <s-paragraph>
             <s-text fontWeight="bold">Discount Reward:</s-text> Incentivizes reviews by giving customers a unique single-use discount code after submitting. Codes are created as Shopify discounts and expire after 30 days.
+          </s-paragraph>
+          <s-paragraph>
+            <s-text fontWeight="bold">Google Reviews:</s-text> Displays your Google rating badge (e.g. "4.3 ★ on Google · 127 reviews") alongside your store reviews. Rating is cached for 1 hour. The Places API has a free tier of $200/month credit.
           </s-paragraph>
         </s-stack>
       </s-section>

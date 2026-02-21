@@ -2,6 +2,7 @@ import prisma from "../db.server";
 import { authenticate, unauthenticated } from "../shopify.server";
 import cache from "../utils/cache.server";
 import { cdnify } from "../utils/images.server";
+import { getGoogleRating } from "../utils/google-places.server";
 import { checkRateLimit } from "../utils/rate-limiter.server";
 import { validateImageUrl } from "../utils/image-validation.server";
 import { updateProductReviewCount } from "../utils/metafields.server";
@@ -147,6 +148,8 @@ export async function loader({ request }) {
   }
   if (!shopSettings) shopSettings = { enableSchemaMarkup: true, requireVerifiedPurchase: false, autoApproveMinRating: 0, reviewDiscountEnabled: false, reviewDiscountPercentage: 10, productReviewsTitle: "Customer Reviews", siteReviewsTitle: "What People Are Saying", carouselTitle: "What Our Customers Say", reviewFormTitle: "Write a Review", photoGalleryTitle: "Customer Photos" };
 
+  const googleRating = await getGoogleRating(shopSettings.googlePlaceId, shopSettings.googleApiKey);
+
   const payload = {
     reviews: reviews.map((r) => ({
       id: r.id,
@@ -173,6 +176,7 @@ export async function loader({ request }) {
         photoGallery: shopSettings.photoGalleryTitle,
       },
     },
+    google: googleRating,
   };
 
   try { await cache.set(cacheKey, payload, 60); } catch (e) { }
