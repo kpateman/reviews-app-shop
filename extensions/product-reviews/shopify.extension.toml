@@ -35,3 +35,8 @@ type = "theme"
   name = "Google Rating"
   target = "section"
   template = "blocks/google-rating.liquid"
+
+  [[extensions.blocks]]
+  name = "Google Reviews"
+  target = "section"
+  template = "blocks/google-reviews.liquid"

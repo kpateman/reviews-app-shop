@@ -15,7 +15,7 @@ export async function getGoogleRating(placeId, apiKey) {
   } catch (e) {}
 
   try {
-    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=rating%2Cuser_ratings_total&key=${encodeURIComponent(apiKey)}`;
+    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=rating%2Cuser_ratings_total%2Creviews&key=${encodeURIComponent(apiKey)}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
     const data = await res.json();
 
@@ -27,6 +27,15 @@ export async function getGoogleRating(placeId, apiKey) {
     const result = {
       rating: data.result.rating ?? null,
       totalRatings: data.result.user_ratings_total ?? null,
+      reviews: (data.result.reviews || []).map((r) => ({
+        authorName: r.author_name,
+        authorUrl: r.author_url,
+        profilePhoto: r.profile_photo_url,
+        rating: r.rating,
+        text: r.text,
+        relativeTime: r.relative_time_description,
+        time: r.time,
+      })),
     };
 
     try { await cache.set(cacheKey, result, 3600); } catch (e) {}
