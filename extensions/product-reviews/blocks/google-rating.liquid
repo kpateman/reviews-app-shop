@@ -1,12 +1,6 @@
-{% comment %}
-  Google Rating Badge Block
-  Displays the store's Google rating and review count.
-  Add this block anywhere in the theme editor.
-{% endcomment %}
-
 {% assign badge_id = block.id | replace: '-', '' %}
 
-<div class="gr-wrapper gr-align-{{ block.settings.alignment }}" id="gr-{{ badge_id }}" style="display:none">
+<div class="gr-wrapper gr-wrapper--pending gr-align-{{ block.settings.alignment }}" id="gr-{{ badge_id }}" style="min-height:2.5rem">
   <a class="gr-badge" href="#" target="_blank" rel="noopener noreferrer" id="gr-link-{{ badge_id }}" style="font-size: {{ block.settings.font_size }}px;">
     <svg class="gr-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="{{ block.settings.font_size | plus: 4 }}" height="{{ block.settings.font_size | plus: 4 }}">
       <path fill="#4285F4" d="M24 9.5c3.1 0 5.8 1.1 8 2.9l6-6C34.5 3.2 29.6 1 24 1 14.8 1 6.9 6.5 3.5 14.4l7 5.4C12.2 13.6 17.6 9.5 24 9.5z"/>
@@ -24,6 +18,9 @@
   .gr-wrapper {
     display: block;
   }
+
+  .gr-wrapper--pending { visibility: hidden; opacity: 0; }
+  .gr-wrapper { transition: opacity 0.25s ease; }
 
   .gr-align-left { text-align: left; }
   .gr-align-center { text-align: center; }
@@ -51,7 +48,7 @@
   }
 
   .gr-stars {
-    color: #f5a623;
+    color: var(--rv-star, #f5a623);
     letter-spacing: 1px;
   }
 
@@ -63,23 +60,33 @@
 <script>
   (function() {
     var badgeId = '{{ badge_id }}';
+    var wrapper = document.getElementById('gr-' + badgeId);
     var starsEl = document.getElementById('gr-stars-' + badgeId);
     var textEl  = document.getElementById('gr-text-'  + badgeId);
     var linkEl  = document.getElementById('gr-link-'  + badgeId);
+
+    function applyAppearance(el, ap) {
+      if (!ap || !el) return;
+      if (ap.starColor) el.style.setProperty('--rv-star', ap.starColor);
+    }
 
     fetch('/apps/reviews?type=company&perPage=1')
       .then(function(r) { return r.json(); })
       .then(function(data) {
         var g = data.google;
-        if (!g || g.rating == null) return;
+        if (!g || g.rating == null) { wrapper.style.display = 'none'; wrapper.style.minHeight = ''; return; }
         var filled = Math.round(g.rating);
         starsEl.textContent = '★'.repeat(filled) + '☆'.repeat(5 - filled);
         var countText = g.totalRatings != null ? ' · ' + g.totalRatings.toLocaleString() + ' reviews' : '';
         textEl.textContent = g.rating.toFixed(1) + ' on Google' + countText;
         linkEl.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(window.location.hostname);
-        document.getElementById('gr-' + badgeId).style.display = '';
+        wrapper.classList.remove('gr-wrapper--pending');
+        wrapper.style.minHeight = '';
+        if (data.settings && data.settings.appearance) {
+          applyAppearance(wrapper, data.settings.appearance);
+        }
       })
-      .catch(function() {});
+      .catch(function() { wrapper.style.display = 'none'; wrapper.style.minHeight = ''; });
   })();
 </script>
 

@@ -1,4 +1,4 @@
-import { useLoaderData, useFetcher } from "react-router";
+import { useLoaderData, useFetcher, useSearchParams } from "react-router";
 import { authenticate } from "../shopify.server";
 import { useState, useCallback } from "react";
 import prisma from "../db.server";
@@ -17,10 +17,20 @@ export async function loader({ request }) {
   const page = Math.max(Number(url.searchParams.get("page") || 1), 1);
   const perPage = Math.min(Number(url.searchParams.get("perPage") || 20), 100);
 
+  const statusParam  = url.searchParams.get("status")    || "all";
+  const ratingParam  = url.searchParams.get("rating")    || "all";
+  const typeParam    = url.searchParams.get("type")      || "all";
+  const productParam = url.searchParams.get("productId") || "all";
+
   const where = { shop };
+  if (statusParam  !== "all") where.status    = statusParam;
+  if (ratingParam  !== "all") where.rating    = parseInt(ratingParam, 10);
+  if (typeParam    !== "all") where.type      = typeParam;
+  if (productParam !== "all") where.productId = productParam;
+
   const skip = (page - 1) * perPage;
 
-  const [reviews, total, productsResponse] = await Promise.all([
+  const [reviews, total, productsResponse, rawReviewedProducts] = await Promise.all([
     prisma.review.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -58,6 +68,12 @@ export async function loader({ request }) {
         }
       }
     `).then(r => r.json()).catch(() => null),
+    prisma.review.findMany({
+      where: { shop },
+      distinct: ["productId"],
+      select: { productId: true, productTitle: true },
+      orderBy: { productTitle: "asc" },
+    }),
   ]);
 
   const shopProducts = productsResponse?.data?.products?.edges?.map(e => ({
@@ -65,7 +81,11 @@ export async function loader({ request }) {
     title: e.node.title,
   })) || [];
 
-  return { reviews, page, perPage, total, shop, shopProducts };
+  const reviewedProducts = rawReviewedProducts
+    .filter(r => r.productId && r.productTitle)
+    .map(r => ({ id: r.productId, title: r.productTitle }));
+
+  return { reviews, page, perPage, total, shop, shopProducts, reviewedProducts };
 }
 
 async function invalidateCaches(shop) {
@@ -242,11 +262,28 @@ export async function action({ request }) {
 }
 
 export default function ReviewsPage() {
-  const { reviews, page, perPage, total, shop, shopProducts } = useLoaderData();
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [ratingFilter, setRatingFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [productFilter, setProductFilter] = useState("all");
+  const { reviews, page, perPage, total, shop, shopProducts, reviewedProducts } = useLoaderData();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const statusFilter  = searchParams.get("status")    || "all";
+  const ratingFilter  = searchParams.get("rating")    || "all";
+  const typeFilter    = searchParams.get("type")      || "all";
+  const productFilter = searchParams.get("productId") || "all";
+
+  const setFilter = useCallback((key, value) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (value === "all") { next.delete(key); } else { next.set(key, value); }
+      next.delete("page");
+      return next;
+    });
+  }, [setSearchParams]);
+
+  const buildPageUrl = useCallback((p) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("page", String(p));
+    return "?" + next.toString();
+  }, [searchParams]);
+
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState("");
   const [showRequestForm, setShowRequestForm] = useState(false);
@@ -287,20 +324,6 @@ export default function ReviewsPage() {
     });
   };
 
-  const products = [...new Map(
-    reviews
-      .filter(r => r.productId && r.productTitle)
-      .map(r => [r.productId, { id: r.productId, title: r.productTitle }])
-  ).values()];
-
-  const filteredReviews = reviews.filter((review) => {
-    const statusMatch = statusFilter === "all" || review.status === statusFilter;
-    const ratingMatch = ratingFilter === "all" || review.rating === parseInt(ratingFilter);
-    const typeMatch = typeFilter === "all" || review.type === typeFilter;
-    const productMatch = productFilter === "all" || review.productId === productFilter;
-    return statusMatch && ratingMatch && typeMatch && productMatch;
-  });
-
   const toggleSelect = useCallback((id) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -311,14 +334,14 @@ export default function ReviewsPage() {
   }, []);
 
   const toggleSelectAll = useCallback(() => {
-    const filteredIds = filteredReviews.map(r => r.id);
-    const allSelected = filteredIds.every(id => selectedIds.has(id));
+    const allIds = reviews.map(r => r.id);
+    const allSelected = allIds.every(id => selectedIds.has(id));
     if (allSelected) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredIds));
+      setSelectedIds(new Set(allIds));
     }
-  }, [filteredReviews, selectedIds]);
+  }, [reviews, selectedIds]);
 
   const selectedReviews = reviews.filter(r => selectedIds.has(r.id));
   const selectedCount = selectedIds.size;
@@ -370,8 +393,6 @@ export default function ReviewsPage() {
     setReplyText("");
   };
 
-  const countByRating = (stars) => reviews.filter(r => r.rating === stars).length;
-
   // Status breakdown of selected reviews
   const selectedPending = selectedReviews.filter(r => r.status === "pending").length;
   const selectedApproved = selectedReviews.filter(r => r.status === "approved").length;
@@ -383,8 +404,8 @@ export default function ReviewsPage() {
   ].filter(Boolean).join(", ");
 
   const isBulkBusy = bulkFetcher.state !== "idle";
-  const filteredIds = filteredReviews.map(r => r.id);
-  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every(id => selectedIds.has(id));
+  const allFilteredSelected = reviews.length > 0 && reviews.every(r => selectedIds.has(r.id));
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
 
   return (
     <s-page heading="Reviews">
@@ -494,20 +515,20 @@ export default function ReviewsPage() {
                 <s-text variant="headingSm">Status</s-text>
                 <s-stack direction="block" gap="tight">
                   <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                    <input type="radio" name="status" checked={statusFilter === "all"} onChange={() => setStatusFilter("all")} />
-                    <span>All ({reviews.length})</span>
+                    <input type="radio" name="status" checked={statusFilter === "all"} onChange={() => setFilter("status", "all")} />
+                    <span>All</span>
                   </label>
                   <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                    <input type="radio" name="status" checked={statusFilter === "pending"} onChange={() => setStatusFilter("pending")} />
-                    <span>Pending ({reviews.filter(r => r.status === "pending").length})</span>
+                    <input type="radio" name="status" checked={statusFilter === "pending"} onChange={() => setFilter("status", "pending")} />
+                    <span>Pending</span>
                   </label>
                   <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                    <input type="radio" name="status" checked={statusFilter === "approved"} onChange={() => setStatusFilter("approved")} />
-                    <span>Approved ({reviews.filter(r => r.status === "approved").length})</span>
+                    <input type="radio" name="status" checked={statusFilter === "approved"} onChange={() => setFilter("status", "approved")} />
+                    <span>Approved</span>
                   </label>
                   <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                    <input type="radio" name="status" checked={statusFilter === "rejected"} onChange={() => setStatusFilter("rejected")} />
-                    <span>Rejected ({reviews.filter(r => r.status === "rejected").length})</span>
+                    <input type="radio" name="status" checked={statusFilter === "rejected"} onChange={() => setFilter("status", "rejected")} />
+                    <span>Rejected</span>
                   </label>
                 </s-stack>
               </s-stack>
@@ -519,16 +540,24 @@ export default function ReviewsPage() {
                 <s-text variant="headingSm">Type</s-text>
                 <s-stack direction="block" gap="tight">
                   <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                    <input type="radio" name="type" checked={typeFilter === "all"} onChange={() => setTypeFilter("all")} />
-                    <span>All ({reviews.length})</span>
+                    <input type="radio" name="type" checked={typeFilter === "all"} onChange={() => setFilter("type", "all")} />
+                    <span>All</span>
                   </label>
                   <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                    <input type="radio" name="type" checked={typeFilter === "product"} onChange={() => setTypeFilter("product")} />
-                    <span>Product ({reviews.filter(r => r.type === "product").length})</span>
+                    <input type="radio" name="type" checked={typeFilter === "product"} onChange={() => setFilter("type", "product")} />
+                    <span>Product</span>
                   </label>
                   <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                    <input type="radio" name="type" checked={typeFilter === "company"} onChange={() => { setTypeFilter("company"); setProductFilter("all"); }} />
-                    <span>Store ({reviews.filter(r => r.type === "company").length})</span>
+                    <input type="radio" name="type" checked={typeFilter === "company"} onChange={() => {
+                      setSearchParams(prev => {
+                        const next = new URLSearchParams(prev);
+                        next.set("type", "company");
+                        next.delete("productId");
+                        next.delete("page");
+                        return next;
+                      });
+                    }} />
+                    <span>Store</span>
                   </label>
                 </s-stack>
               </s-stack>
@@ -540,20 +569,19 @@ export default function ReviewsPage() {
                 <s-text variant="headingSm">Rating</s-text>
                 <s-stack direction="block" gap="tight">
                   <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                    <input type="radio" name="rating" checked={ratingFilter === "all"} onChange={() => setRatingFilter("all")} />
+                    <input type="radio" name="rating" checked={ratingFilter === "all"} onChange={() => setFilter("rating", "all")} />
                     <span>All ratings</span>
                   </label>
                   {[5, 4, 3, 2, 1].map((stars) => (
                     <label key={stars} style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                      <input type="radio" name="rating" checked={ratingFilter === String(stars)} onChange={() => setRatingFilter(String(stars))} />
+                      <input type="radio" name="rating" checked={ratingFilter === String(stars)} onChange={() => setFilter("rating", String(stars))} />
                       <span style={{ color: "#f5a623" }}>{starRating(stars)}</span>
-                      <span style={{ color: "#888", fontSize: "12px" }}>({countByRating(stars)})</span>
                     </label>
                   ))}
                 </s-stack>
               </s-stack>
 
-              {products.length > 0 && (
+              {reviewedProducts.length > 0 && (
                 <>
                   <s-divider />
 
@@ -562,7 +590,20 @@ export default function ReviewsPage() {
                     <s-text variant="headingSm">Product</s-text>
                     <select
                       value={productFilter}
-                      onChange={(e) => { setProductFilter(e.target.value); if (e.target.value !== "all") setTypeFilter("product"); }}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSearchParams(prev => {
+                          const next = new URLSearchParams(prev);
+                          if (val === "all") {
+                            next.delete("productId");
+                          } else {
+                            next.set("productId", val);
+                            next.set("type", "product");
+                          }
+                          next.delete("page");
+                          return next;
+                        });
+                      }}
                       style={{
                         width: "100%",
                         padding: "8px",
@@ -572,7 +613,7 @@ export default function ReviewsPage() {
                       }}
                     >
                       <option value="all">All products</option>
-                      {products.map((product) => (
+                      {reviewedProducts.map((product) => (
                         <option key={product.id} value={product.id}>
                           {product.title}
                         </option>
@@ -589,7 +630,7 @@ export default function ReviewsPage() {
         <div style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
           {/* Select all + count row */}
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
-            {filteredReviews.length > 0 && (
+            {reviews.length > 0 && (
               <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
                 <input
                   type="checkbox"
@@ -601,7 +642,7 @@ export default function ReviewsPage() {
               </label>
             )}
             <s-text tone="subdued">
-              Showing {filteredReviews.length} of {reviews.length} reviews
+              {total} review{total !== 1 ? "s" : ""}{reviews.length < total ? ` — showing ${reviews.length}` : ""}
             </s-text>
           </div>
 
@@ -672,13 +713,13 @@ export default function ReviewsPage() {
           )}
 
       <s-section>
-        {filteredReviews.length === 0 ? (
+        {reviews.length === 0 ? (
           <s-box padding="loose" background="subdued" borderRadius="base">
             <s-text tone="subdued">No reviews found.</s-text>
           </s-box>
         ) : (
           <s-stack direction="block" gap="base">
-            {filteredReviews.map((review) => (
+            {reviews.map((review) => (
               <s-box
                 key={review.id}
                 padding="base"
@@ -864,9 +905,9 @@ export default function ReviewsPage() {
       {/* Pagination */}
       <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
         <div>
-          <a href={`?page=${Math.max(page - 1, 1)}`} style={{ marginRight: 12 }}>Previous</a>
-          <span>Page {page} / {Math.max(1, Math.ceil(total / perPage))}</span>
-          <a href={`?page=${Math.min(page + 1, Math.max(1, Math.ceil(total / perPage)))}`} style={{ marginLeft: 12 }}>Next</a>
+          <a href={buildPageUrl(Math.max(page - 1, 1))} style={{ marginRight: 12 }}>Previous</a>
+          <span>Page {page} / {totalPages}</span>
+          <a href={buildPageUrl(Math.min(page + 1, totalPages))} style={{ marginLeft: 12 }}>Next</a>
         </div>
       </div>
         </div>

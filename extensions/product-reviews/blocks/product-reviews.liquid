@@ -1,8 +1,3 @@
-{% comment %}
-  Product Reviews Block
-  Displays reviews for the current product
-{% endcomment %}
-
 {% assign block_id = block.id | replace: '-', '' %}
 {% assign review_count = product.metafields.reviews_app.review_count.value | default: 0 | times: 1 %}
 {% assign skeleton_count = review_count | at_most: 2 %}
@@ -102,13 +97,12 @@
     </div>
     {% else %}
     <div class="review-form-slot review-login-prompt" id="review-form-slot-{{ block_id }}">
-      <p><a href="/account/login">Log in</a> to write a review</p>
+      <p><a href="{{ routes.account_login_url }}">Log in</a> to write a review</p>
     </div>
     {% endif %}
   </div>
   <div id="reviews-show-more-{{ block_id }}" class="reviews-show-more"></div>
 
-  {% comment %} Inject aggregateRating into the theme's existing Product JSON-LD {% endcomment %}
   {% assign avg_rating = product.metafields.reviews_app.average_rating.value | default: 0 | times: 1.0 %}
   {% if product.id and review_count > 0 and avg_rating > 0 %}
     <script>
@@ -164,21 +158,18 @@
         var scriptEl = findProductJsonLd();
         if (!scriptEl) return;
 
-        // Fetch reviews to include individual review markup
         fetch('/apps/reviews?productId=' + encodeURIComponent(productId) + '&perPage=10')
           .then(function(res) { return res.json(); })
           .then(function(data) {
             injectRatingData(scriptEl, data.reviews || []);
           })
           .catch(function() {
-            // Fallback: inject just the aggregate rating without individual reviews
             injectRatingData(scriptEl, []);
           });
       })();
     </script>
   {% endif %}
 
-  {% comment %} Inject aggregateRating into the theme's existing Organization JSON-LD for company/store reviews {% endcomment %}
   {% unless product.id %}
     <script>
       (function() {
@@ -279,10 +270,9 @@
     </script>
   {% endunless %}
 
-  <!-- Lightbox for full-size image viewing -->
   <div class="image-lightbox" id="image-lightbox-{{ block_id }}" onclick="window.closeLightbox && closeLightbox()">
     <span class="close-btn">&times;</span>
-    <img src="" alt="Full size review photo" id="lightbox-image-{{ block_id }}">
+    <img src="" alt="Full size review photo" id="lightbox-image-{{ block_id }}" width="1200" height="800" style="width:auto;height:auto;max-width:90vw;max-height:90vh;">
   </div>
 </div>
 
@@ -295,7 +285,6 @@
     overflow: hidden;
   }
 
-  /* Card size options (for grid layout) — applies to both review cards and the form */
   .reviews-width-narrow .review-card,
   .reviews-width-narrow .review-form-slot { flex: 1 1 180px; max-width: 260px; }
   .reviews-width-medium .review-card,
@@ -305,7 +294,6 @@
   .reviews-width-full .review-card,
   .reviews-width-full .review-form-slot { flex: 1 1 100%; max-width: 100%; }
 
-  /* Masonry layout style */
   .reviews-layout-masonry .reviews-list {
     display: block;
     column-gap: 1rem;
@@ -324,23 +312,19 @@
     max-height: none;
   }
 
-  /* Masonry column widths - browser fits as many as possible */
   .reviews-layout-masonry.reviews-width-narrow .reviews-list { column-width: 180px; }
   .reviews-layout-masonry.reviews-width-medium .reviews-list { column-width: 250px; }
   .reviews-layout-masonry.reviews-width-wide .reviews-list { column-width: 320px; }
   .reviews-layout-masonry.reviews-width-full .reviews-list { column-width: 100%; }
 
-  /* Alignment options */
   .reviews-align-left { margin-left: 0; margin-right: auto; }
   .reviews-align-center { margin-left: auto; margin-right: auto; }
   .reviews-align-right { margin-left: auto; margin-right: 0; }
 
-  /* Padding options */
   .reviews-padding-none { padding: 0; }
   .reviews-padding-small { padding: 1rem 0.5rem; }
   .reviews-padding-medium { padding: 2rem 1rem; }
   .reviews-padding-large { padding: 3rem 1.5rem; }
-
 
   .reviews-header {
     display: flex;
@@ -377,8 +361,6 @@
     color: #666;
   }
 
-
-  /* Skeleton loading cards */
   @keyframes shimmer {
     0% { background-position: -200px 0; }
     100% { background-position: 200px 0; }
@@ -408,7 +390,6 @@
   .skeleton-line.short { width: 60%; }
   .skeleton-image { width: 100%; height: 140px; border-radius: 6px; margin-top: 0.5rem; }
 
-  /* Show more button */
   .reviews-show-more {
     text-align: center;
     margin-bottom: 1.5rem;
@@ -443,7 +424,6 @@
     margin-bottom: 1rem;
   }
 
-  /* Form sits in the same flex flow as review cards — sizing comes from .reviews-width-* rules */
   .review-form-slot {
     border: 1px solid #e5e5e5;
     border-radius: 8px;
@@ -464,28 +444,23 @@
   }
 
   .review-card-body {
-    flex: 1 1 0;
     min-width: 0;
   }
 
-  /* Image beside text layout */
-  .reviews-images-beside .review-card {
+  .reviews-images-beside .review-card-body {
     display: flex;
-    flex-wrap: nowrap;
     gap: 1rem;
     align-items: flex-start;
   }
 
-  .reviews-images-beside .review-card-body {
+  .reviews-images-beside .review-card-content {
     flex: 1 1 0;
     min-width: 0;
-    overflow: hidden;
   }
 
   .reviews-images-beside .review-images {
     flex: 0 0 30%;
     max-width: 280px;
-    margin-top: 0;
     display: block;
     overflow: hidden;
   }
@@ -510,7 +485,6 @@
     margin-top: 0;
   }
 
-  /* Compact layout for small screens - full-width cards and form */
   @container (max-width: 480px) {
     .review-card,
     .review-form-slot {
@@ -548,6 +522,13 @@
     color: #666;
   }
 
+  .review-header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.3rem;
+  }
+
   .review-rating {
     color: #f5a623;
     font-size: 1.1rem;
@@ -566,12 +547,11 @@
 
   .verified-badge {
     display: inline-block;
-    background: #e8f5e9;
-    color: #2e7d32;
-    font-size: 0.75rem;
+    background: var(--rv-badge-bg, #2e7d32);
+    color: var(--rv-badge-text, #ffffff);
+    font-size: 0.85rem;
     padding: 0.2rem 0.5rem;
     border-radius: 4px;
-    margin-left: 0.5rem;
   }
 
   .review-images {
@@ -598,12 +578,10 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   }
 
-  /* Single image - can be a bit larger */
   .review-images.single-image img {
     max-height: 200px;
   }
 
-  /* Lightbox for full-size image viewing */
   .image-lightbox {
     display: none;
     position: fixed;
@@ -638,7 +616,6 @@
     cursor: pointer;
   }
 
-
   .review-reply {
     margin-top: 1rem;
     padding: 1rem;
@@ -666,8 +643,6 @@
     border-radius: 8px;
     flex: 1 1 100%;
   }
-
-
 
   .form-group {
     margin-bottom: 1rem;
@@ -851,41 +826,58 @@
     const isProductPage = reviewType === 'product' && productId;
     const apiUrl = '/apps/reviews';
 
-    // Pagination state (configurable via block settings)
     const INITIAL_PER_PAGE = {{ block.settings.initial_reviews | default: 4 }};
     const LOAD_MORE_PER_PAGE = {{ block.settings.load_more_count | default: 8 }};
     let loadedCount = 0;
     let totalReviews = 0;
     let allLoadedReviews = [];
 
+    function contrastColor(hex) {
+      const m = (hex || '#2e7d32').replace('#', '');
+      if (m.length !== 6) return '#ffffff';
+      const toLinear = c => { const s = parseInt(c, 16) / 255; return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+      const L = 0.2126 * toLinear(m.slice(0,2)) + 0.7152 * toLinear(m.slice(2,4)) + 0.0722 * toLinear(m.slice(4,6));
+      return L > 0.179 ? '#000000' : '#ffffff';
+    }
+
+    function applyAppearance(el, ap) {
+      if (!ap || !el) return;
+      if (ap.badgeColor) {
+        el.style.setProperty('--rv-badge-bg', ap.badgeColor);
+        el.style.setProperty('--rv-badge-text', contrastColor(ap.badgeColor));
+      }
+    }
+
     function renderReviewCard(review) {
       return `
         <div class="review-card">
-          <div class="review-card-body">
-            <div class="review-card-header">
-              <div>
-                <div class="review-customer-name">
-                  ${escapeHtml(review.customerName)}
-                  ${review.verifiedPurchase ? '<span class="verified-badge">Verified Purchase</span>' : ''}
-                </div>
-                <div class="review-date">${new Date(review.createdAt).toLocaleDateString()}</div>
-              </div>
-              <div class="review-rating">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</div>
+          <div class="review-card-header">
+            <div>
+              <div class="review-customer-name">${escapeHtml(review.customerName)}</div>
+              <div class="review-date">${new Date(review.createdAt).toLocaleDateString()}</div>
             </div>
-            <div class="review-title">${escapeHtml(review.title)}</div>
-            <div class="review-content">${escapeHtml(review.content)}</div>
-            ${review.reply ? `
-              <div class="review-reply">
-                <div class="reply-header">Store Response:</div>
-                <div class="reply-content">${escapeHtml(review.reply)}</div>
+            <div class="review-header-right">
+              <div class="review-rating">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</div>
+              ${review.verifiedPurchase ? '<span class="verified-badge">Verified Purchase</span>' : ''}
+            </div>
+          </div>
+          <div class="review-card-body">
+            <div class="review-card-content">
+              <div class="review-title">${escapeHtml(review.title)}</div>
+              <div class="review-content">${escapeHtml(review.content)}</div>
+              ${review.reply ? `
+                <div class="review-reply">
+                  <div class="reply-header">Store Response:</div>
+                  <div class="reply-content">${escapeHtml(review.reply)}</div>
+                </div>
+              ` : ''}
+            </div>
+            ${review.images && review.images.length > 0 ? `
+              <div class="review-images ${review.images.length === 1 ? 'single-image' : ''}">
+                ${review.images.map(img => `<img src="${escapeHtml(img.url)}" alt="Review photo" onclick="openLightbox(this.src)">`).join('')}
               </div>
             ` : ''}
           </div>
-          ${review.images && review.images.length > 0 ? `
-            <div class="review-images ${review.images.length === 1 ? 'single-image' : ''}">
-              ${review.images.map(img => `<img src="${escapeHtml(img.url)}" alt="Review photo" onclick="openLightbox(this.src)">`).join('')}
-            </div>
-          ` : ''}
         </div>`;
     }
 
@@ -933,7 +925,6 @@
       }
     }
 
-    // Initial load — fetch first 2 reviews
     async function loadReviews() {
       try {
         const fetchUrl = isProductPage
@@ -944,7 +935,6 @@
 
         totalReviews = data.summary?.totalCount || data.summary?.count || 0;
 
-        // Update summary with total count
         const summaryEl = document.getElementById('reviews-summary-' + blockId);
         if (summaryEl && data.summary) {
           const stars = '★'.repeat(Math.round(data.summary.averageRating)) + '☆'.repeat(5 - Math.round(data.summary.averageRating));
@@ -955,11 +945,9 @@
           `;
         }
 
-        // Display reviews — remove skeletons, insert cards before form-slot
         const listEl = document.getElementById('reviews-list-' + blockId);
         const formSlot = document.getElementById('review-form-slot-' + blockId);
         if (listEl) {
-          // Remove skeleton cards (and any previous review cards / messages)
           Array.from(listEl.children).forEach(child => {
             if (child !== formSlot) child.remove();
           });
@@ -974,8 +962,6 @@
             allLoadedReviews = data.reviews;
             loadedCount = data.reviews.length;
             updateShowMoreButton();
-
-            // JSON-LD structured data is now rendered server-side in Liquid above
           } else {
             const noReviewsMsg = isProductPage ? 'No reviews yet. Be the first to review this product!' : 'No reviews yet. Be the first to share your experience!';
             const noReviewsHtml = '<p class="no-reviews">' + noReviewsMsg + '</p>';
@@ -986,7 +972,9 @@
             }
           }
         }
-        // Apply app-configured title if set
+        if (data && data.settings && data.settings.appearance) {
+          applyAppearance(container, data.settings.appearance);
+        }
         if (data && data.settings && data.settings.widgetTitles) {
           const appTitle = isProductPage ? data.settings.widgetTitles.productReviews : data.settings.widgetTitles.siteReviews;
           if (appTitle) {
@@ -1018,10 +1006,8 @@
       return div.innerHTML;
     }
 
-    // Lightbox functions (shared across all blocks)
     if (!window.openLightbox) {
       window.openLightbox = function(src) {
-        // Find any lightbox on page
         const lightbox = document.querySelector('.image-lightbox');
         const img = lightbox ? lightbox.querySelector('img') : null;
         if (lightbox && img) {
@@ -1044,7 +1030,6 @@
       });
     }
 
-    // Star rating input (block-specific)
     const starInput = document.getElementById('star-rating-input-' + blockId);
     const ratingInput = document.getElementById('rating-input-' + blockId);
     if (starInput) {
@@ -1061,7 +1046,6 @@
       });
     }
 
-    // Image upload handling (block-specific)
     let selectedImages = [];
     const imageInput = document.getElementById('review-images-' + blockId);
     const imagePreviews = document.getElementById('image-previews-' + blockId);
@@ -1075,7 +1059,6 @@
       imageInput.addEventListener('change', async (e) => {
         const files = Array.from(e.target.files);
 
-        // Limit to 2 images
         const remaining = 2 - selectedImages.length;
         const newFiles = files.slice(0, remaining);
 
@@ -1088,7 +1071,6 @@
           try {
             showMessage('Uploading image...', 'info');
             
-            // Upload directly to Cloudinary
             const formData = new FormData();
             formData.append('file', file);
             formData.append('upload_preset', 'reviews_unsigned');
@@ -1124,7 +1106,6 @@
           }
         }
 
-        // Clear the input
         imageInput.value = '';
       });
     }
@@ -1138,7 +1119,6 @@
         </div>
       `).join('');
 
-      // Add click handlers for remove buttons
       imagePreviews.querySelectorAll('.remove-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           const idx = parseInt(btn.dataset.index);
@@ -1148,7 +1128,6 @@
       });
     }
 
-    // Character counters
     const TITLE_MAX = 100;
     const CONTENT_MAX = 1000;
 
@@ -1190,7 +1169,6 @@
       CONTENT_MAX
     );
 
-    // Form submission via AJAX (block-specific)
     const form = document.getElementById('review-form-' + blockId);
     if (form) {
       form.addEventListener('submit', async (e) => {
@@ -1214,7 +1192,6 @@
           return;
         }
 
-        // Add images as JSON
         if (selectedImages.length > 0) {
           formData.set('images', JSON.stringify(selectedImages));
         }
@@ -1261,7 +1238,6 @@
       }
     }
 
-    // Load reviews on page load
     loadReviews();
   })();
 </script>

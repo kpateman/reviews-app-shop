@@ -1,8 +1,3 @@
-{% comment %}
-  Reviews Carousel Block
-  Shows recent high-rated reviews in a carousel for the home page
-{% endcomment %}
-
 {% assign block_id = block.id | replace: '-', '' %}
 
 <div class="reviews-carousel-container" id="reviews-carousel-{{ block_id }}" data-block-id="{{ block_id }}" data-slides-per-view="{{ block.settings.slides_per_view }}" style="--slides-per-view: {{ block.settings.slides_per_view }}">
@@ -28,8 +23,6 @@
 <style>
   .reviews-carousel-container {
     padding: 2rem 1rem;
-    max-width: 1200px;
-    margin: 0 auto;
   }
 
   .carousel-header {
@@ -153,12 +146,13 @@
 
   .carousel-verified {
     display: inline-block;
-    background: #e8f5e9;
-    color: #2e7d32;
-    font-size: 0.7rem;
-    padding: 0.15rem 0.4rem;
+    background: var(--rv-badge-bg, #2e7d32);
+    color: var(--rv-badge-text, #ffffff);
+    font-size: 0.8rem;
+    padding: 0.2rem 0.45rem;
     border-radius: 3px;
     margin-left: 0.5rem;
+    vertical-align: middle;
   }
 
   .carousel-dots {
@@ -219,6 +213,22 @@
 
     const configuredPerView = parseInt(document.getElementById('reviews-carousel-' + blockId).dataset.slidesPerView) || 3;
 
+    function contrastColor(hex) {
+      const m = (hex || '#2e7d32').replace('#', '');
+      if (m.length !== 6) return '#ffffff';
+      const toLinear = c => { const s = parseInt(c, 16) / 255; return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+      const L = 0.2126 * toLinear(m.slice(0,2)) + 0.7152 * toLinear(m.slice(2,4)) + 0.0722 * toLinear(m.slice(4,6));
+      return L > 0.179 ? '#000000' : '#ffffff';
+    }
+
+    function applyAppearance(el, ap) {
+      if (!ap || !el) return;
+      if (ap.badgeColor) {
+        el.style.setProperty('--rv-badge-bg', ap.badgeColor);
+        el.style.setProperty('--rv-badge-text', contrastColor(ap.badgeColor));
+      }
+    }
+
     let currentIndex = 0;
     let slidesPerView = configuredPerView;
     let reviews = [];
@@ -236,23 +246,21 @@
 
     async function loadReviews() {
       try {
-        // Fetch enough reviews to have maxReviews after filtering by min rating
-        const response = await fetch('/apps/reviews?perPage=50');
+        const response = await fetch('/apps/reviews?perPage=' + maxReviews + '&minRating=' + minRating);
         const data = await response.json();
 
-        // Filter by minimum rating and limit count
-        reviews = data.reviews
-          .filter(r => r.rating >= minRating)
-          .slice(0, maxReviews);
+        reviews = data.reviews;
 
         renderCarousel();
         if (autoPlay && reviews.length > slidesPerView) {
           startAutoPlay();
         }
 
-        // Apply app-configured title if set
+        if (data && data.settings && data.settings.appearance) {
+          applyAppearance(document.getElementById('reviews-carousel-' + blockId), data.settings.appearance);
+        }
         if (data && data.settings && data.settings.widgetTitles && data.settings.widgetTitles.carousel) {
-          const titleEl = container.querySelector('.carousel-title');
+          const titleEl = document.querySelector('#reviews-carousel-' + blockId + ' .carousel-title');
           if (titleEl) titleEl.textContent = data.settings.widgetTitles.carousel;
         }
       } catch (error) {
@@ -322,17 +330,24 @@
     }
 
     function updateCarousel() {
-      const slideWidth = track.querySelector('.carousel-slide')?.offsetWidth || 300;
-      const gap = 16;
-      const offset = currentIndex * (slideWidth + gap) * slidesPerView;
+      const firstSlide = track.querySelector('.carousel-slide');
+      if (!firstSlide) return;
+      const slideWidth = firstSlide.offsetWidth;
+      const lastSlide = track.querySelector('.carousel-slide:last-child');
+      const lastSlideRight = lastSlide.offsetLeft + lastSlide.offsetWidth;
+      const containerWidth = track.parentElement.offsetWidth;
+      const maxOffset = Math.max(0, lastSlideRight - containerWidth);
+      const gap = firstSlide.nextElementSibling
+        ? firstSlide.nextElementSibling.offsetLeft - (firstSlide.offsetLeft + slideWidth)
+        : 16;
+      const rawOffset = currentIndex * (slideWidth + gap) * slidesPerView;
+      const offset = Math.min(rawOffset, maxOffset);
       track.style.transform = `translateX(-${offset}px)`;
 
-      // Update dots
       dotsContainer.querySelectorAll('.carousel-dot').forEach((dot, i) => {
         dot.classList.toggle('active', i === currentIndex);
       });
 
-      // Update buttons
       const maxIndex = Math.ceil(reviews.length / slidesPerView) - 1;
       prevBtn.disabled = currentIndex === 0;
       nextBtn.disabled = currentIndex >= maxIndex;

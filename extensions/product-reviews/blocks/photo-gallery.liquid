@@ -1,14 +1,10 @@
-{% comment %}
-  Photo Gallery Block
-  Displays a grid of customer review photos from across the store.
-  Each photo links to the product page and opens in a lightbox on click.
-{% endcomment %}
-
 {% assign block_id = block.id | replace: '-', '' %}
 
-<div class="photo-gallery-container photo-gallery-padding-{{ block.settings.block_padding }}"
+<div class="photo-gallery-container photo-gallery-padding-{{ block.settings.block_padding }} photo-gallery-align-{{ block.settings.block_alignment }}"
      id="photo-gallery-{{ block_id }}"
      data-block-id="{{ block_id }}"
+     data-layout="{{ block.settings.layout }}"
+     data-carousel-rows="{{ block.settings.carousel_rows }}"
      data-columns="{{ block.settings.columns }}"
      data-max-photos="{{ block.settings.max_photos }}"
      data-show-more="{{ block.settings.show_more_button }}"
@@ -21,12 +17,32 @@
     {% endif %}
   {% endif %}
 
-  <div class="photo-gallery-grid photo-gallery-cols-{{ block.settings.columns }}" id="photo-gallery-grid-{{ block_id }}">
+  <div class="photo-gallery-grid photo-gallery-cols-{{ block.settings.columns }}"
+       id="photo-gallery-grid-{{ block_id }}"
+       {% if block.settings.layout == 'carousel' %}style="display:none"{% endif %}>
     {% for i in (1..6) %}
     <div class="photo-gallery-item skeleton-photo" aria-hidden="true">
       <div class="skeleton-photo-inner"></div>
     </div>
     {% endfor %}
+  </div>
+
+  <div class="pgal-carousel"
+       id="pgal-carousel-{{ block_id }}"
+       {% if block.settings.layout != 'carousel' %}style="display:none"{% endif %}>
+    <button class="pgal-btn pgal-prev" id="pgal-prev-{{ block_id }}" aria-label="Previous photos">&#8249;</button>
+    <div class="pgal-viewport" id="pgal-viewport-{{ block_id }}">
+      <div class="pgal-track pgal-rows-{{ block.settings.carousel_rows }}" id="pgal-track-{{ block_id }}">
+        {% assign skel_count = 10 %}
+        {% if block.settings.carousel_rows == '2' %}{% assign skel_count = 20 %}{% endif %}
+        {% for i in (1..skel_count) %}
+        <div class="photo-gallery-item skeleton-photo" aria-hidden="true">
+          <div class="skeleton-photo-inner"></div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <button class="pgal-btn pgal-next" id="pgal-next-{{ block_id }}" aria-label="Next photos">&#8250;</button>
   </div>
 
   <div id="photo-gallery-empty-{{ block_id }}" class="photo-gallery-empty" style="display: none;">
@@ -51,15 +67,20 @@
   .photo-gallery-title {
     font-size: 1.5rem;
     margin: 0 0 0.25rem 0;
-    text-align: center;
   }
 
   .photo-gallery-subtitle {
-    text-align: center;
     color: #666;
     margin: 0 0 1.5rem 0;
     font-size: 0.95rem;
   }
+
+  .photo-gallery-align-left .photo-gallery-title,
+  .photo-gallery-align-left .photo-gallery-subtitle { text-align: left; }
+  .photo-gallery-align-center .photo-gallery-title,
+  .photo-gallery-align-center .photo-gallery-subtitle { text-align: center; }
+  .photo-gallery-align-right .photo-gallery-title,
+  .photo-gallery-align-right .photo-gallery-subtitle { text-align: right; }
 
   .photo-gallery-grid {
     display: grid;
@@ -81,6 +102,56 @@
     .photo-gallery-grid { grid-template-columns: repeat(2, 1fr) !important; }
   }
 
+  .pgal-carousel {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .pgal-viewport {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .pgal-track {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 150px;
+    gap: 8px;
+    transition: transform 0.3s ease;
+  }
+
+  .pgal-rows-1 { grid-template-rows: 150px; }
+  .pgal-rows-2 { grid-template-rows: repeat(2, 150px); }
+
+  .pgal-btn {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid #ddd;
+    background: #fff;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    user-select: none;
+  }
+
+  .pgal-btn:hover:not(:disabled) {
+    border-color: #999;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+  }
+
+  .pgal-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
   .photo-gallery-item {
     position: relative;
     aspect-ratio: 1;
@@ -88,6 +159,12 @@
     border-radius: 6px;
     cursor: pointer;
     background: #f5f5f5;
+  }
+
+  .pgal-track .photo-gallery-item {
+    width: 150px;
+    height: 150px;
+    aspect-ratio: unset;
   }
 
   .photo-gallery-item img {
@@ -121,7 +198,7 @@
 
   .photo-gallery-item-rating {
     font-size: 0.75rem;
-    color: #f5a623;
+    color: var(--rv-star, #f5a623);
   }
 
   .photo-gallery-item-product {
@@ -142,10 +219,9 @@
     text-decoration: underline;
   }
 
-  /* Skeleton loading */
   @keyframes photo-gallery-shimmer {
-    0% { background-position: -200px 0; }
-    100% { background-position: 200px 0; }
+    0%   { background-position: -200px 0; }
+    100% { background-position:  200px 0; }
   }
 
   .skeleton-photo-inner {
@@ -182,7 +258,6 @@
     border-color: #888;
     color: #000;
   }
-
 </style>
 
 <script>
@@ -191,14 +266,21 @@
     const container = document.getElementById('photo-gallery-' + blockId);
     if (!container) return;
 
-    const maxPhotos = parseInt(container.dataset.maxPhotos) || 12;
+    const layout        = container.dataset.layout || 'grid';
+    const carouselRows  = container.dataset.carouselRows || '1';
+    const maxPhotos     = parseInt(container.dataset.maxPhotos) || 12;
     const showMoreEnabled = container.dataset.showMore === 'true';
-    const productId = container.dataset.productId || '';
-    const apiUrl = '/apps/reviews';
-    const perPage = 50;
+    const productId     = container.dataset.productId || '';
+    const apiUrl        = '/apps/reviews';
+    const perPage       = 50;
 
-    let allPhotos = [];
+    let allPhotos     = [];
     let displayedCount = 0;
+
+    function applyAppearance(el, ap) {
+      if (!ap || !el) return;
+      if (ap.starColor) el.style.setProperty('--rv-star', ap.starColor);
+    }
 
     function escapeHtml(text) {
       const div = document.createElement('div');
@@ -215,6 +297,9 @@
       img.src = photo.url;
       img.alt = 'Customer photo' + (photo.productTitle ? ' for ' + photo.productTitle : '');
       img.loading = 'lazy';
+      img.decoding = 'async';
+      img.width = 300;
+      img.height = 300;
       item.appendChild(img);
 
       const overlay = document.createElement('div');
@@ -242,17 +327,28 @@
 
     function displayPhotos(photos) {
       const grid = document.getElementById('photo-gallery-grid-' + blockId);
-      grid.innerHTML = '';
+      const skeletons = Array.from(grid.querySelectorAll('.skeleton-photo'));
 
       if (photos.length === 0) {
+        skeletons.forEach(function(s) { s.remove(); });
         grid.style.display = 'none';
         document.getElementById('photo-gallery-empty-' + blockId).style.display = 'block';
         return;
       }
 
-      photos.forEach(function(photo) {
-        grid.appendChild(renderPhoto(photo));
+      photos.forEach(function(photo, i) {
+        var realItem = renderPhoto(photo);
+        if (skeletons[i]) {
+          grid.replaceChild(realItem, skeletons[i]);
+        } else {
+          grid.appendChild(realItem);
+        }
       });
+
+      for (var i = photos.length; i < skeletons.length; i++) {
+        if (skeletons[i].parentNode === grid) skeletons[i].remove();
+      }
+
       displayedCount = photos.length;
       updateShowMore();
     }
@@ -266,9 +362,7 @@
         moreEl.querySelector('button').addEventListener('click', function() {
           var next = allPhotos.slice(displayedCount, displayedCount + maxPhotos);
           var grid = document.getElementById('photo-gallery-grid-' + blockId);
-          next.forEach(function(photo) {
-            grid.appendChild(renderPhoto(photo));
-          });
+          next.forEach(function(photo) { grid.appendChild(renderPhoto(photo)); });
           displayedCount += next.length;
           updateShowMore();
         });
@@ -277,11 +371,98 @@
       }
     }
 
-    // Fetch reviews with photos
+    function renderCarousel(photos) {
+      const carouselEl = document.getElementById('pgal-carousel-' + blockId);
+      const viewport   = document.getElementById('pgal-viewport-' + blockId);
+      const track      = document.getElementById('pgal-track-'    + blockId);
+      const prevBtn    = document.getElementById('pgal-prev-'     + blockId);
+      const nextBtn    = document.getElementById('pgal-next-'     + blockId);
+
+      track.innerHTML = '';
+
+      if (photos.length === 0) {
+        carouselEl.style.display = 'none';
+        document.getElementById('photo-gallery-empty-' + blockId).style.display = 'block';
+        return;
+      }
+
+      photos.forEach(function(photo) {
+        track.appendChild(renderPhoto(photo));
+      });
+
+      var rows = parseInt(carouselRows) || 1;
+      var cols = Math.ceil(photos.length / rows);
+      var gapPx = parseFloat(window.getComputedStyle(track).columnGap) || 8;
+      var minColSize = 150;
+
+      var currentPage = 0;
+      var fitCols = 1;
+      var actualColSize = minColSize;
+      var pageCount = 1;
+
+      function goToPage(page) {
+        currentPage = Math.max(0, Math.min(page, pageCount - 1));
+        var pageWidth = fitCols * (actualColSize + gapPx);
+        var trackWidth = cols * actualColSize + Math.max(0, cols - 1) * gapPx;
+        var maxOffset = Math.max(0, trackWidth - viewport.clientWidth);
+        var offset = Math.min(currentPage * pageWidth, maxOffset);
+        track.style.transform = 'translateX(-' + offset + 'px)';
+        prevBtn.disabled = currentPage === 0;
+        nextBtn.disabled = currentPage >= pageCount - 1;
+      }
+
+      function applyCarouselSizing() {
+        var vpWidth = viewport.clientWidth;
+        if (vpWidth <= 0) { setTimeout(applyCarouselSizing, 50); return; }
+
+        var naturalWidth = cols * minColSize + Math.max(0, cols - 1) * gapPx;
+
+        if (naturalWidth <= vpWidth) {
+          actualColSize = Math.min(250, Math.floor((vpWidth - Math.max(0, cols - 1) * gapPx) / cols));
+          fitCols = cols;
+        } else {
+          fitCols = Math.max(1, Math.floor((vpWidth + gapPx) / (minColSize + gapPx)));
+          actualColSize = Math.floor((vpWidth - (fitCols - 1) * gapPx) / fitCols);
+        }
+
+        pageCount = Math.max(1, Math.ceil(cols / fitCols));
+        currentPage = Math.min(currentPage, pageCount - 1);
+
+        var trackWidth = cols * actualColSize + Math.max(0, cols - 1) * gapPx;
+        track.style.gridAutoColumns  = actualColSize + 'px';
+        track.style.gridTemplateRows = 'repeat(' + rows + ', ' + actualColSize + 'px)';
+        track.querySelectorAll('.photo-gallery-item').forEach(function(item) {
+          item.style.width  = actualColSize + 'px';
+          item.style.height = actualColSize + 'px';
+        });
+        track.style.width = trackWidth + 'px';
+
+        track.style.transition = 'none';
+        goToPage(currentPage);
+        requestAnimationFrame(function() {
+          requestAnimationFrame(function() {
+            track.style.transition = '';
+          });
+        });
+      }
+
+      prevBtn.addEventListener('click', function() { goToPage(currentPage - 1); });
+      nextBtn.addEventListener('click', function() { goToPage(currentPage + 1); });
+
+      var resizeTimer = null;
+      window.addEventListener('resize', function() {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(applyCarouselSizing, 100);
+      });
+
+      requestAnimationFrame(applyCarouselSizing);
+    }
+
     async function loadPhotos() {
       try {
         var page = 1;
         var hasMore = true;
+        var data;
 
         while (hasMore && allPhotos.length < 200) {
           var fetchUrl = apiUrl + '?withPhotos=1&perPage=' + perPage + '&page=' + page;
@@ -289,7 +470,7 @@
             fetchUrl += '&productId=' + encodeURIComponent(productId) + '&type=product';
           }
           var response = await fetch(fetchUrl);
-          var data = await response.json();
+          data = await response.json();
 
           if (data.reviews && data.reviews.length > 0) {
             data.reviews.forEach(function(review) {
@@ -313,18 +494,29 @@
           page++;
         }
 
-        displayPhotos(allPhotos.slice(0, maxPhotos));
+        var photos = allPhotos.slice(0, maxPhotos);
 
-        // Apply app-configured title if set
+        if (layout === 'carousel') {
+          renderCarousel(photos);
+        } else {
+          displayPhotos(photos);
+        }
+
+        if (data && data.settings && data.settings.appearance) {
+          applyAppearance(container, data.settings.appearance);
+        }
+
         if (data && data.settings && data.settings.widgetTitles && data.settings.widgetTitles.photoGallery) {
           var titleEl = document.querySelector('#photo-gallery-' + blockId + ' .photo-gallery-title');
           if (titleEl) titleEl.textContent = data.settings.widgetTitles.photoGallery;
         }
       } catch (error) {
         console.error('Error loading photo gallery:', error);
-        var grid = document.getElementById('photo-gallery-grid-' + blockId);
-        grid.innerHTML = '';
-        document.getElementById('photo-gallery-empty-' + blockId).style.display = 'block';
+        if (layout === 'carousel') {
+          renderCarousel([]);
+        } else {
+          displayPhotos([]);
+        }
       }
     }
 
@@ -350,28 +542,62 @@
       "default": "See what our customers are sharing"
     },
     {
+      "type": "select",
+      "id": "layout",
+      "label": "Layout",
+      "default": "grid",
+      "options": [
+        { "value": "grid",     "label": "Grid" },
+        { "value": "carousel", "label": "Carousel" }
+      ]
+    },
+    {
+      "type": "range",
+      "id": "max_photos",
+      "label": "Photos to show",
+      "min": 6,
+      "max": 48,
+      "step": 2,
+      "default": 12
+    },
+    {
+      "type": "select",
+      "id": "carousel_rows",
+      "label": "Carousel rows",
+      "default": "1",
+      "info": "Only applies when Layout is set to Carousel",
+      "options": [
+        { "value": "1", "label": "1 row" },
+        { "value": "2", "label": "2 rows" }
+      ]
+    },
+    {
       "type": "range",
       "id": "columns",
-      "label": "Columns",
+      "label": "Grid columns",
+      "info": "Only applies when Layout is set to Grid",
       "min": 3,
       "max": 6,
       "step": 1,
       "default": 4
     },
     {
-      "type": "range",
-      "id": "max_photos",
-      "label": "Photos to show",
-      "min": 3,
-      "max": 24,
-      "step": 1,
-      "default": 12
-    },
-    {
       "type": "checkbox",
       "id": "show_more_button",
       "label": "Show 'load more' button",
+      "info": "Only applies when Layout is set to Grid",
       "default": true
+    },
+    {
+      "type": "select",
+      "id": "block_alignment",
+      "label": "Alignment",
+      "default": "center",
+      "options": [
+        { "value": "left",   "label": "Left" },
+        { "value": "center", "label": "Center" },
+        { "value": "right",  "label": "Right" }
+      ]
     },
     {
       "type": "select",
@@ -379,10 +605,10 @@
       "label": "Padding",
       "default": "medium",
       "options": [
-        { "value": "none", "label": "None" },
-        { "value": "small", "label": "Small" },
+        { "value": "none",   "label": "None" },
+        { "value": "small",  "label": "Small" },
         { "value": "medium", "label": "Medium" },
-        { "value": "large", "label": "Large" }
+        { "value": "large",  "label": "Large" }
       ]
     }
   ]

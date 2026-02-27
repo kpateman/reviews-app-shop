@@ -89,6 +89,34 @@ export async function action({ request }) {
 
 const inputStyle = { padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc", fontSize: "0.9rem", width: "100%", maxWidth: "400px" };
 
+const toggleOnStyle = {
+  padding: "0.375rem 1.125rem",
+  borderRadius: "5px",
+  border: "1px solid #005aad",
+  background: "linear-gradient(to bottom, #006ece, #0082ef)",
+  boxShadow: "inset 0 2px 5px rgba(0,0,60,0.4), inset 0 1px 2px rgba(0,0,0,0.25)",
+  color: "white",
+  fontWeight: "700",
+  cursor: "pointer",
+  fontSize: "0.75rem",
+  letterSpacing: "0.08em",
+  minWidth: "56px",
+};
+
+const toggleOffStyle = {
+  padding: "0.375rem 1.125rem",
+  borderRadius: "5px",
+  border: "1px solid #b0b0b0",
+  background: "linear-gradient(to bottom, #f6f6f6, #e2e2e2)",
+  boxShadow: "0 2px 4px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.95)",
+  color: "#555",
+  fontWeight: "700",
+  cursor: "pointer",
+  fontSize: "0.75rem",
+  letterSpacing: "0.08em",
+  minWidth: "56px",
+};
+
 export default function SettingsPage() {
   const { settings, googlePlaceId: initialPlaceId, googleApiKey: initialApiKey } = useLoaderData();
   const fetcher = useFetcher();
@@ -136,7 +164,7 @@ export default function SettingsPage() {
   return (
     <s-page heading="Settings">
       <s-section heading="Review Submission">
-        <s-box padding="base" borderWidth="base" borderRadius="base">
+        <s-box padding="base" borderWidth="base" borderRadius="base" style={{paddingBottom: "1.5rem"}}>
           <s-stack direction="block" gap="loose">
             <s-stack direction="inline" gap="base" align="space-between">
               <s-stack direction="block" gap="tight">
@@ -146,15 +174,16 @@ export default function SettingsPage() {
                   When disabled, anyone can review but only purchasers get the "Verified Purchase" badge.
                 </s-text>
               </s-stack>
-              <s-button
-                variant={optimisticSettings.requireVerifiedPurchase ? "primary" : "tertiary"}
+              <button
                 onClick={() => handleToggle("requireVerifiedPurchase", optimisticSettings.requireVerifiedPurchase)}
                 disabled={isSubmitting}
+                style={{ ...(optimisticSettings.requireVerifiedPurchase ? toggleOnStyle : toggleOffStyle), ...(isSubmitting ? { opacity: 0.6, cursor: "not-allowed" } : {}) }}
               >
                 {optimisticSettings.requireVerifiedPurchase ? "ON" : "OFF"}
-              </s-button>
+              </button>
             </s-stack>
 
+            <div style={{height: "0.75rem"}} />
             <s-divider />
 
             <s-stack direction="inline" gap="base" align="space-between">
@@ -192,19 +221,19 @@ export default function SettingsPage() {
                 When enabled, adds structured data to product pages so Google can show star ratings in search results.
               </s-text>
             </s-stack>
-            <s-button
-              variant={optimisticSettings.enableSchemaMarkup ? "primary" : "tertiary"}
+            <button
               onClick={() => handleToggle("enableSchemaMarkup", optimisticSettings.enableSchemaMarkup)}
               disabled={isSubmitting}
+              style={{ ...(optimisticSettings.enableSchemaMarkup ? toggleOnStyle : toggleOffStyle), ...(isSubmitting ? { opacity: 0.6, cursor: "not-allowed" } : {}) }}
             >
               {optimisticSettings.enableSchemaMarkup ? "ON" : "OFF"}
-            </s-button>
+            </button>
           </s-stack>
         </s-box>
       </s-section>
 
       <s-section heading="Review Incentives">
-        <s-box padding="base" borderWidth="base" borderRadius="base">
+        <s-box padding="base" borderWidth="base" borderRadius="base" style={{paddingBottom: "1.5rem"}}>
           <s-stack direction="block" gap="loose">
             <s-stack direction="inline" gap="base" align="space-between">
               <s-stack direction="block" gap="tight">
@@ -214,17 +243,18 @@ export default function SettingsPage() {
                   The code is emailed to the customer once their review is approved.
                 </s-text>
               </s-stack>
-              <s-button
-                variant={optimisticSettings.reviewDiscountEnabled ? "primary" : "tertiary"}
+              <button
                 onClick={() => handleToggle("reviewDiscountEnabled", optimisticSettings.reviewDiscountEnabled)}
                 disabled={isSubmitting}
+                style={{ ...(optimisticSettings.reviewDiscountEnabled ? toggleOnStyle : toggleOffStyle), ...(isSubmitting ? { opacity: 0.6, cursor: "not-allowed" } : {}) }}
               >
                 {optimisticSettings.reviewDiscountEnabled ? "ON" : "OFF"}
-              </s-button>
+              </button>
             </s-stack>
 
             {optimisticSettings.reviewDiscountEnabled && (
               <>
+                <div style={{height: "0.75rem"}} />
                 <s-divider />
                 <s-stack direction="inline" gap="base" align="space-between">
                   <s-stack direction="block" gap="tight">

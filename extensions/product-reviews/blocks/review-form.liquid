@@ -1,8 +1,3 @@
-{% comment %}
-  Standalone Review Form Block
-  Can be placed anywhere to collect reviews
-{% endcomment %}
-
 <div class="review-form-block"
      data-product-id="{{ product.id | prepend: 'gid://shopify/Product/' }}"
      data-product-title="{{ product.title | escape }}">
@@ -62,7 +57,7 @@
     <p class="message" id="standalone-message"></p>
   </form>
   {% else %}
-  <p class="login-prompt">Please <a href="/account/login">log in</a> to write a review.</p>
+  <p class="login-prompt">Please <a href="{{ routes.account_login_url }}">log in</a> to write a review.</p>
   {% endif %}
 </div>
 
@@ -255,7 +250,6 @@
       });
     }
 
-    // Character counters
     const TITLE_MAX = 100;
     const CONTENT_MAX = 1000;
 
@@ -297,7 +291,6 @@
       CONTENT_MAX
     );
 
-    // Image upload handling
     let selectedImages = [];
     const imageInput = document.getElementById('standalone-images');
     const imagePreviews = document.getElementById('standalone-image-previews');
@@ -394,7 +387,6 @@
           return;
         }
 
-        // Add images as JSON
         if (selectedImages.length > 0) {
           formData.set('images', JSON.stringify(selectedImages));
         }

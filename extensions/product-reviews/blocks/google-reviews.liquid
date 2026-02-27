@@ -1,9 +1,3 @@
-{% comment %}
-  Google Reviews Block
-  Displays the most recent Google reviews for the store.
-  Add this block anywhere in the theme editor.
-{% endcomment %}
-
 {% assign block_id = block.id | replace: '-', '' %}
 
 <div class="gr-reviews-wrapper" id="gr-reviews-{{ block_id }}" style="display:none">
@@ -42,7 +36,6 @@
     gap: 1rem;
   }
 
-  /* Stretch the last card to fill the row if it would be alone */
   {% if block.settings.columns == '2' %}
   #gr-reviews-{{ block_id }} .gr-reviews-list .gr-review-card:last-child:nth-child(odd) {
     grid-column: 1 / -1;

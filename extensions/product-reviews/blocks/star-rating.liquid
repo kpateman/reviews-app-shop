@@ -1,8 +1,3 @@
-{% comment %}
-  Star Rating Summary Block
-  Displays a compact star rating summary for use anywhere on product pages
-{% endcomment %}
-
 <div class="star-rating-summary"
      data-product-id="{{ product.id | prepend: 'gid://shopify/Product/' }}">
   <span class="stars">☆☆☆☆☆</span>
@@ -32,7 +27,6 @@
     const container = document.querySelector('.star-rating-summary');
     const productId = container.dataset.productId;
 
-    // Use the app proxy URL
     const apiUrl = '/apps/reviews';
 
     fetch(`${apiUrl}?productId=${encodeURIComponent(productId)}&type=product`)
