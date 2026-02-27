@@ -1,13 +1,14 @@
 import prisma from "../db.server";
 import { authenticate, unauthenticated } from "../shopify.server";
 import cache from "../utils/cache.server";
-import { cdnify } from "../utils/images.server";
+import { cdnify, cdnifyThumb, cdnifyFull } from "../utils/images.server";
 import { getGoogleRating } from "../utils/google-places.server";
 import { checkRateLimit } from "../utils/rate-limiter.server";
 import { validateImageUrl } from "../utils/image-validation.server";
 import { updateProductReviewCount } from "../utils/metafields.server";
 import { createReviewDiscountCode } from "../utils/discount.server";
 import { sendDiscountRewardEmail } from "../utils/email.server";
+import { getShopPlanFromDb, checkReviewCap, checkDiscountCap } from "../utils/billing.server";
 
 // Helper to return JSON responses
 function jsonResponse(data, status = 200) {
@@ -85,16 +86,18 @@ export async function loader({ request }) {
 
   const url = new URL(request.url);
   const productId = url.searchParams.get("productId");
-  const type = url.searchParams.get("type") || "product";
+  const rawType = url.searchParams.get("type");
+  const type = rawType === "company" ? "company" : "product";
   const perPage = Math.min(Number(url.searchParams.get("perPage") || 20), 50);
   const withPhotos = url.searchParams.get("withPhotos") === "1";
+  const minRating = Math.min(Math.max(Number(url.searchParams.get("minRating") || 1), 1), 5);
   // Support both page-based and offset-based pagination
   const skipParam = url.searchParams.get("skip");
   const page = skipParam == null ? Math.max(Number(url.searchParams.get("page") || 1), 1) : null;
 
   if (!shop) return jsonResponse({ error: "Unauthorized" }, 401);
 
-  const cacheKey = `app-proxy:reviews:${shop}:${type}:${productId || 'all'}:s${skipParam || 0}:p${page || 0}:n${perPage}${withPhotos ? ':photos' : ''}`;
+  const cacheKey = `app-proxy:reviews:${shop}:${type}:${productId || 'all'}:s${skipParam || 0}:p${page || 0}:n${perPage}:r${minRating}${withPhotos ? ':photos' : ''}`;
   try {
     const cached = await cache.get(cacheKey);
     if (cached) return jsonResponse(cached);
@@ -118,6 +121,9 @@ export async function loader({ request }) {
   }
   if (withPhotos) {
     where.images = { some: { status: "approved" } };
+  }
+  if (minRating > 1) {
+    where.rating = { gte: minRating };
   }
 
   let [reviews, totalCount, avgResult] = await Promise.all([
@@ -146,7 +152,7 @@ export async function loader({ request }) {
     console.error("ShopSettings fetch error (falling back to defaults):", dbErr?.message || dbErr);
     shopSettings = null;
   }
-  if (!shopSettings) shopSettings = { enableSchemaMarkup: true, requireVerifiedPurchase: false, autoApproveMinRating: 0, reviewDiscountEnabled: false, reviewDiscountPercentage: 10, productReviewsTitle: "Customer Reviews", siteReviewsTitle: "What People Are Saying", carouselTitle: "What Our Customers Say", reviewFormTitle: "Write a Review", photoGalleryTitle: "Customer Photos" };
+  if (!shopSettings) shopSettings = { enableSchemaMarkup: true, requireVerifiedPurchase: false, autoApproveMinRating: 0, reviewDiscountEnabled: false, reviewDiscountPercentage: 10, productReviewsTitle: "Customer Reviews", siteReviewsTitle: "What People Are Saying", carouselTitle: "What Our Customers Say", reviewFormTitle: "Write a Review", photoGalleryTitle: "Customer Photos", widgetStarColor: "#f5a623", widgetPrimaryColor: "#000000", widgetBorderRadius: 8, widgetBadgeColor: "#2e7d32", widgetBgColor: "#ffffff", widgetTextColor: "#444444" };
 
   const googleRating = await getGoogleRating(shopSettings.googlePlaceId, shopSettings.googleApiKey);
 
@@ -163,7 +169,11 @@ export async function loader({ request }) {
       repliedAt: r.repliedAt,
       productTitle: r.productTitle,
       productHandle: r.productHandle,
-      images: r.images.filter((img) => img.status === "approved").map((img) => ({ url: cdnify(img.url) })),
+      images: r.images.filter((img) => img.status === "approved").map((img) => ({
+        url: cdnify(img.url),
+        thumbUrl: cdnifyThumb(img.url),
+        fullUrl: cdnifyFull(img.url),
+      })),
     })),
     summary: { count: reviews.length, totalCount, page, perPage, averageRating: Math.round(avgRating * 10) / 10 },
     settings: {
@@ -174,6 +184,14 @@ export async function loader({ request }) {
         carousel: shopSettings.carouselTitle,
         reviewForm: shopSettings.reviewFormTitle,
         photoGallery: shopSettings.photoGalleryTitle,
+      },
+      appearance: {
+        starColor: shopSettings.widgetStarColor ?? "#f5a623",
+        primaryColor: shopSettings.widgetPrimaryColor ?? "#000000",
+        borderRadius: shopSettings.widgetBorderRadius ?? 8,
+        badgeColor: shopSettings.widgetBadgeColor ?? "#2e7d32",
+        bgColor: shopSettings.widgetBgColor ?? "#ffffff",
+        textColor: shopSettings.widgetTextColor ?? "#444444",
       },
     },
     google: googleRating,
@@ -235,6 +253,13 @@ export async function action({ request }) {
 
     const existingReview = await prisma.review.findFirst({ where: { shop, customerEmail, productId: type === "product" ? productId : null, type } });
     if (existingReview) return jsonResponse({ error: type === "company" ? "You have already submitted a store review" : "You have already submitted a review for this product" }, 400);
+
+    // Billing: check review cap
+    const shopPlan = await getShopPlanFromDb(shop);
+    const reviewCap = await checkReviewCap(shop, shopPlan);
+    if (!reviewCap.allowed) {
+      return jsonResponse({ error: "This store has reached its review storage limit. Please contact the store owner." }, 403);
+    }
 
     let shopSettings = await prisma.shopSettings.findUnique({ where: { shop } });
     if (!shopSettings) shopSettings = { requireVerifiedPurchase: false, autoApproveMinRating: 0, reviewDiscountEnabled: false, reviewDiscountPercentage: 10 };
@@ -314,21 +339,26 @@ export async function action({ request }) {
       updateProductReviewCount(shop, productId).catch(() => {});
     }
 
-    // If auto-approved and discount enabled, generate + email the discount code
+    // If auto-approved and discount enabled, check cap then generate + email the discount code
     if (status === "approved" && shopSettings.reviewDiscountEnabled && customerEmail) {
-      createReviewDiscountCode(shop, shopSettings.reviewDiscountPercentage, customerName)
-        .then((code) => {
-          if (code) {
-            sendDiscountRewardEmail({
-              to: customerEmail,
-              customerName,
-              shopName: shop.replace(".myshopify.com", ""),
-              discountCode: code,
-              discountPercentage: shopSettings.reviewDiscountPercentage,
-            }).catch((err) => console.error("Discount email error:", err));
-          }
-        })
-        .catch((err) => console.error("Discount creation error:", err));
+      const discountCap = await checkDiscountCap(shop, shopPlan);
+      if (discountCap.allowed) {
+        createReviewDiscountCode(shop, shopSettings.reviewDiscountPercentage, customerName)
+          .then((code) => {
+            if (code) {
+              sendDiscountRewardEmail({
+                to: customerEmail,
+                customerName,
+                shopName: shop.replace(".myshopify.com", ""),
+                discountCode: code,
+                discountPercentage: shopSettings.reviewDiscountPercentage,
+              }).catch((err) => console.error("Discount email error:", err));
+            }
+          })
+          .catch((err) => console.error("Discount creation error:", err));
+      } else {
+        console.warn(`Discount cap reached for ${shop} (${discountCap.count}/${discountCap.limit} this month)`);
+      }
     }
 
     let message = orderId ? "Thank you! Your verified purchase review has been submitted" : "Thank you! Your review has been submitted";

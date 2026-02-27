@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { unauthenticated } from "../shopify.server";
+import prisma from "../db.server";
 
 /**
  * Generate a unique single-use discount code for a reviewer.
@@ -42,9 +43,6 @@ export async function createReviewDiscountCode(shop, percentage, customerName) {
             endsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days
             usageLimit: 1,
             appliesOncePerCustomer: true,
-            context: {
-              all: "ALL",
-            },
             customerGets: {
               value: {
                 percentage: percentage / 100, // API expects 0.0-1.0
@@ -67,7 +65,16 @@ export async function createReviewDiscountCode(shop, percentage, customerName) {
 
     const createdCode =
       data.data?.discountCodeBasicCreate?.codeDiscountNode?.codeDiscount?.codes?.nodes?.[0]?.code;
-    return createdCode || code;
+    const finalCode = createdCode || code;
+
+    // Log for monthly cap enforcement
+    try {
+      await prisma.discountCodeLog.create({ data: { shop, code: finalCode } });
+    } catch (logErr) {
+      console.error("Failed to log discount code:", logErr?.message || logErr);
+    }
+
+    return finalCode;
   } catch (err) {
     console.error("Failed to create review discount code:", err?.message || err);
     return null;

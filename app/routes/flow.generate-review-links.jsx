@@ -1,6 +1,7 @@
 import { authenticate } from "../shopify.server";
 import { generateReviewToken, buildReviewUrl } from "../utils/review-tokens.server";
 import { sendReviewRequestEmail } from "../utils/email.server";
+import { getShopPlanFromDb, checkEmailCap } from "../utils/billing.server";
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -73,6 +74,15 @@ export async function action({ request }) {
   const customerLastName = customer.lastName || "";
   const customerName = [customerFirstName, customerLastName].filter(Boolean).join(" ") || customerEmail;
   const customerId = customer.id;
+
+  // Billing: check monthly email cap
+  const shopPlan = await getShopPlanFromDb(shopify_domain);
+  const emailCap = await checkEmailCap(shopify_domain, shopPlan);
+  if (!emailCap.allowed) {
+    return jsonResponse({
+      message: `Monthly review request email limit reached (${emailCap.limit}/month on ${shopPlan} plan). Upgrade to send more.`,
+    }, 429);
+  }
 
   // Extract unique products from line items (skip items without a product, e.g. tips)
   const seenProductIds = new Set();

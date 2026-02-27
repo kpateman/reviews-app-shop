@@ -94,9 +94,19 @@ model ReviewRequestToken {
   @@index([expiresAt])
 }
 
+model DiscountCodeLog {
+  id        String   @id @default(cuid())
+  shop      String
+  code      String
+  createdAt DateTime @default(now())
+
+  @@index([shop, createdAt])
+}
+
 model ShopSettings {
   id                    String   @id @default(cuid())
   shop                  String   @unique
+  plan                  String   @default("free")
   requireVerifiedPurchase Boolean @default(false)
   autoApproveMinRating  Int     @default(0)  // 0 = off, 1-5 = auto-approve reviews with this rating or above
   enableSchemaMarkup    Boolean @default(true)
@@ -110,6 +120,13 @@ model ShopSettings {
   photoGalleryTitle     String  @default("Customer Photos")
   googlePlaceId         String?
   googleApiKey          String?
+  // Global widget appearance
+  widgetStarColor       String  @default("#f5a623")
+  widgetPrimaryColor    String  @default("#000000")
+  widgetBorderRadius    Int     @default(8)
+  widgetBadgeColor      String  @default("#2e7d32")
+  widgetBgColor         String  @default("#ffffff")
+  widgetTextColor       String  @default("#444444")
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }

@@ -1,7 +1,8 @@
 import prisma from "../db.server";
 import cache from "../utils/cache.server";
-import { cdnify } from "../utils/images.server";
+import { cdnify, cdnifyThumb, cdnifyFull } from "../utils/images.server";
 import { checkRateLimit } from "../utils/rate-limiter.server";
+import { getShopPlanFromDb, checkReviewCap } from "../utils/billing.server";
 
 // Helper to return JSON responses
 function jsonResponse(data, { status = 200, headers = {} } = {}) {
@@ -80,7 +81,11 @@ export async function loader({ request }) {
       customerName: r.customerName,
       verifiedPurchase: !!r.orderId,
       createdAt: r.createdAt,
-      images: r.images.map((img) => ({ url: cdnify(img.url) })),
+      images: r.images.map((img) => ({
+        url: cdnify(img.url),
+        thumbUrl: cdnifyThumb(img.url),
+        fullUrl: cdnifyFull(img.url),
+      })),
     })),
     summary: {
       count: totalCount,
@@ -174,6 +179,13 @@ export async function action({ request }) {
 
     if (existingReview) {
       return jsonResponse({ error: "You have already submitted a review" }, { status: 400 });
+    }
+
+    // Billing: check review cap
+    const shopPlan = await getShopPlanFromDb(shop);
+    const reviewCap = await checkReviewCap(shop, shopPlan);
+    if (!reviewCap.allowed) {
+      return jsonResponse({ error: "This store has reached its review storage limit." }, { status: 403 });
     }
 
     // Create the review

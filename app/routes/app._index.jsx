@@ -2,6 +2,7 @@ import { useLoaderData, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { getShopPlanFromDb, checkReviewCap, checkEmailCap, checkDiscountCap, isAllowlisted } from "../utils/billing.server";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -32,17 +33,47 @@ export const loader = async ({ request }) => {
     ? approvedReviews.reduce((sum, r) => sum + r.rating, 0) / approvedReviews.length
     : 0;
 
+  // Plan limit alerts (uses cached plan from DB — no billing API call)
+  let planAlerts = null;
+  if (!isAllowlisted(shop)) {
+    const plan = await getShopPlanFromDb(shop);
+    const [reviewCap, emailCap, discountCap] = await Promise.all([
+      checkReviewCap(shop, plan),
+      checkEmailCap(shop, plan),
+      checkDiscountCap(shop, plan),
+    ]);
+
+    function alertLevel(cap) {
+      if (cap.limit === null) return null;
+      const pct = (cap.count / cap.limit) * 100;
+      if (pct >= 100) return "critical";
+      if (pct >= 80) return "warning";
+      return null;
+    }
+
+    planAlerts = {
+      reviews: { level: alertLevel(reviewCap), count: reviewCap.count, limit: reviewCap.limit },
+      emails: { level: alertLevel(emailCap), count: emailCap.count, limit: emailCap.limit },
+      discounts: { level: alertLevel(discountCap), count: discountCap.count, limit: discountCap.limit },
+    };
+  }
+
   return {
     stats: { total, pending, approved, rejected, avgRating },
     recentReviews,
+    planAlerts,
   };
 };
 
 export default function Index() {
-  const { stats, recentReviews } = useLoaderData();
+  const { stats, recentReviews, planAlerts } = useLoaderData();
   const navigate = useNavigate();
 
   const starRating = (rating) => "★".repeat(Math.round(rating)) + "☆".repeat(5 - Math.round(rating));
+
+  // Determine highest severity across all metrics
+  const hasCritical = planAlerts && Object.values(planAlerts).some((a) => a.level === "critical");
+  const hasWarning = planAlerts && !hasCritical && Object.values(planAlerts).some((a) => a.level === "warning");
 
   return (
     <s-page heading="Reviews Dashboard">
@@ -52,6 +83,56 @@ export default function Index() {
       <s-button slot="secondary-actions" onClick={() => navigate("/app/analytics")}>
         Analytics
       </s-button>
+
+      {hasCritical && (
+        <s-section>
+          <s-banner heading="Plan limit reached — action required" tone="critical">
+            <s-stack direction="block" gap="tight">
+              {planAlerts.reviews.level === "critical" && (
+                <s-paragraph>
+                  <strong>Review storage full ({planAlerts.reviews.count}/{planAlerts.reviews.limit}).</strong> New reviews from customers are currently being rejected.
+                </s-paragraph>
+              )}
+              {planAlerts.emails.level === "critical" && (
+                <s-paragraph>
+                  <strong>Email limit reached ({planAlerts.emails.count}/{planAlerts.emails.limit} this month).</strong> Shopify Flow is no longer sending review request emails until next month.
+                </s-paragraph>
+              )}
+              {planAlerts.discounts.level === "critical" && (
+                <s-paragraph>
+                  <strong>Discount code limit reached ({planAlerts.discounts.count}/{planAlerts.discounts.limit} this month).</strong> Customers who write reviews are not receiving their reward codes.
+                </s-paragraph>
+              )}
+            </s-stack>
+            <s-button onClick={() => navigate("/app/billing")}>Upgrade plan</s-button>
+          </s-banner>
+        </s-section>
+      )}
+
+      {hasWarning && (
+        <s-section>
+          <s-banner heading="Approaching plan limits" tone="warning">
+            <s-stack direction="block" gap="tight">
+              {planAlerts.reviews.level === "warning" && (
+                <s-paragraph>
+                  Review storage: <strong>{planAlerts.reviews.count} of {planAlerts.reviews.limit} used.</strong> When full, new customer reviews will be rejected.
+                </s-paragraph>
+              )}
+              {planAlerts.emails.level === "warning" && (
+                <s-paragraph>
+                  Email requests: <strong>{planAlerts.emails.count} of {planAlerts.emails.limit} sent this month.</strong> Flow will stop sending review emails when the limit is reached.
+                </s-paragraph>
+              )}
+              {planAlerts.discounts.level === "warning" && (
+                <s-paragraph>
+                  Discount codes: <strong>{planAlerts.discounts.count} of {planAlerts.discounts.limit} used this month.</strong> Customers will stop receiving reward codes when the limit is reached.
+                </s-paragraph>
+              )}
+            </s-stack>
+            <s-button variant="secondary" onClick={() => navigate("/app/billing")}>View plan &amp; usage</s-button>
+          </s-banner>
+        </s-section>
+      )}
 
       <s-section heading="Overview">
         <s-stack direction="inline" gap="loose">
