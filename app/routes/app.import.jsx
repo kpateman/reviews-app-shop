@@ -4,6 +4,7 @@ import { authenticate } from "../shopify.server";
 import {
   parseYotpoCsv,
   parseJudgeMeCsv,
+  parseLeanReviewsCsv,
   detectCsvFormat,
   lookupProductsByHandle,
   searchProducts,
@@ -32,9 +33,12 @@ export async function action({ request }) {
     try {
       const format = detectCsvFormat(csvText);
       if (format === "unknown") {
-        return { error: "Unrecognised CSV format. Please upload a Yotpo or Judge.me export file." };
+        return { error: "Unrecognised CSV format. Please upload a Lean Reviews, Yotpo, or Judge.me export file." };
       }
-      const reviews = format === "judgeme" ? parseJudgeMeCsv(csvText) : parseYotpoCsv(csvText);
+      const reviews =
+        format === "judgeme" ? parseJudgeMeCsv(csvText) :
+        format === "leanreviews" ? parseLeanReviewsCsv(csvText) :
+        parseYotpoCsv(csvText);
       if (reviews.length === 0) {
         return { error: "No valid reviews found in the CSV file." };
       }
@@ -126,6 +130,7 @@ export default function ImportPage() {
   const [manualMappings, setManualMappings] = useState({});
   const [searchHandle, setSearchHandle] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [overrideToUpload, setOverrideToUpload] = useState(false);
 
   const data = fetcher.data;
   const isLoading = fetcher.state !== "idle";
@@ -140,8 +145,16 @@ export default function ImportPage() {
     reader.readAsText(file);
   }, []);
 
+  const handleStartOver = useCallback(() => {
+    setCsvText(null);
+    setFileName(null);
+    setManualMappings({});
+    setOverrideToUpload(true);
+  }, []);
+
   const handleUpload = useCallback(() => {
     if (!csvText) return;
+    setOverrideToUpload(false);
     const fd = new FormData();
     fd.set("action", "parse");
     fd.set("csvText", csvText);
@@ -213,13 +226,14 @@ export default function ImportPage() {
   };
 
   return (
-    <s-page heading="Import Reviews" backAction={{ url: "/app" }}>
+    <s-page heading="Import Reviews">
+      <s-button slot="secondary-actions" variant="tertiary" onClick={() => navigate("/app")}>← Back to Home</s-button>
       {/* Step 1: Upload */}
-      {(!data || data.error) && !data?.step && (
+      {(overrideToUpload || ((!data || data.error) && !data?.step)) && (
         <s-section heading="Import Reviews">
           <s-stack direction="block" gap="base">
             <s-paragraph>
-              Upload a CSV export from Yotpo or Judge.me to import your existing reviews. The format is detected automatically.
+              Upload a CSV export from Lean Reviews, Yotpo, or Judge.me to import your existing reviews. The format is detected automatically — including Lean Reviews' own export, so you can use this to restore a backup.
             </s-paragraph>
 
             {data?.error && (
@@ -255,7 +269,7 @@ export default function ImportPage() {
       )}
 
       {/* Step 2: Preview */}
-      {data?.step === "preview" && (
+      {!overrideToUpload && data?.step === "preview" && (
         <>
           <s-section heading="Import Preview">
             <s-stack direction="block" gap="base">
@@ -513,7 +527,7 @@ export default function ImportPage() {
                 </s-button>
                 <s-button
                   variant="tertiary"
-                  onClick={() => window.location.reload()}
+                  onClick={handleStartOver}
                 >
                   Start Over
                 </s-button>
@@ -524,7 +538,7 @@ export default function ImportPage() {
       )}
 
       {/* Step 3: Done */}
-      {data?.step === "done" && (
+      {!overrideToUpload && data?.step === "done" && (
         <s-section heading="Import Complete">
           <s-stack direction="block" gap="base">
             <s-stack direction="inline" gap="loose">
@@ -580,7 +594,7 @@ export default function ImportPage() {
               </s-button>
               <s-button
                 variant="tertiary"
-                onClick={() => window.location.reload()}
+                onClick={handleStartOver}
               >
                 Import More
               </s-button>
@@ -595,6 +609,10 @@ export default function ImportPage() {
           <s-paragraph>
             The format is detected automatically from the file headers.
           </s-paragraph>
+          <s-stack direction="block" gap="none">
+            <s-text variant="headingSm">Lean Reviews</s-text>
+            <s-text>Use the Export CSV button on the home page. You can re-import your own backup to restore reviews.</s-text>
+          </s-stack>
           <s-stack direction="block" gap="none">
             <s-text variant="headingSm">Yotpo</s-text>
             <s-text>Go to Reviews → All Reviews → Export to download your CSV.</s-text>

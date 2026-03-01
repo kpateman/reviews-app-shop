@@ -20,7 +20,7 @@
   <div class="photo-gallery-grid photo-gallery-cols-{{ block.settings.columns }}"
        id="photo-gallery-grid-{{ block_id }}"
        {% if block.settings.layout == 'carousel' %}style="display:none"{% endif %}>
-    {% for i in (1..6) %}
+    {% for i in (1..block.settings.max_photos) %}
     <div class="photo-gallery-item skeleton-photo" aria-hidden="true">
       <div class="skeleton-photo-inner"></div>
     </div>
@@ -518,6 +518,30 @@
           displayPhotos([]);
         }
       }
+    }
+
+    // Pre-size carousel skeleton items to the same dimensions they'll have once
+    // photos load, so there's no height jump when applyCarouselSizing runs.
+    function initCarouselSizing() {
+      const viewport = document.getElementById('pgal-viewport-' + blockId);
+      const track    = document.getElementById('pgal-track-'    + blockId);
+      if (!viewport || !track) return;
+      const vpWidth = viewport.clientWidth;
+      if (vpWidth <= 0) { requestAnimationFrame(initCarouselSizing); return; }
+      const rows   = parseInt(carouselRows) || 1;
+      const gapPx  = parseFloat(window.getComputedStyle(track).columnGap) || 8;
+      const fitCols  = Math.max(1, Math.floor((vpWidth + gapPx) / (150 + gapPx)));
+      const colSize  = Math.floor((vpWidth - (fitCols - 1) * gapPx) / fitCols);
+      track.style.gridAutoColumns  = colSize + 'px';
+      track.style.gridTemplateRows = 'repeat(' + rows + ', ' + colSize + 'px)';
+      track.querySelectorAll('.photo-gallery-item').forEach(function(item) {
+        item.style.width  = colSize + 'px';
+        item.style.height = colSize + 'px';
+      });
+    }
+
+    if (layout === 'carousel') {
+      requestAnimationFrame(initCarouselSizing);
     }
 
     loadPhotos();

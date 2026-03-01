@@ -1,4 +1,5 @@
 import { useLoaderData, useNavigate } from "react-router";
+import { useState } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -68,6 +69,7 @@ export const loader = async ({ request }) => {
 export default function Index() {
   const { stats, recentReviews, planAlerts } = useLoaderData();
   const navigate = useNavigate();
+  const [exporting, setExporting] = useState(false);
 
   const starRating = (rating) => "★".repeat(Math.round(rating)) + "☆".repeat(5 - Math.round(rating));
 
@@ -208,35 +210,33 @@ export default function Index() {
         )}
       </s-section>
 
-      <s-section slot="aside" heading="Import Reviews">
+      <s-section slot="aside" heading="Import &amp; Export">
         <s-stack direction="block" gap="base">
           <s-paragraph>
-            Migrating from Yotpo or Judge.me? Import your existing reviews from a CSV export.
+            Migrating from Yotpo or Judge.me? Import your existing reviews from a CSV export. You can also re-import a Lean Reviews backup CSV to restore your data.
           </s-paragraph>
           <s-button onClick={() => navigate("/app/import")}>Import from CSV</s-button>
+          <s-paragraph>
+            Download all your reviews as a CSV backup.
+          </s-paragraph>
+          <s-button variant="secondary" disabled={exporting} onClick={async () => {
+            setExporting(true);
+            try {
+              const res = await fetch("/app/export");
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `lean-reviews-${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            } finally {
+              setExporting(false);
+            }
+          }}>{exporting ? "Preparing download…" : "Export CSV"}</s-button>
         </s-stack>
       </s-section>
 
-      <s-section slot="aside" heading="Automated Review Emails">
-        <s-stack direction="block" gap="base">
-          <s-paragraph>
-            Automatically email customers 7 days after their order is fulfilled, asking them to review the products they purchased. No manual work needed.
-          </s-paragraph>
-          <s-banner heading="Setup in Shopify Flow" tone="info">
-            <s-numbered-list>
-              <s-list-item>Open Shopify Flow and create a new workflow. </s-list-item>
-              <s-list-item>Select the <s-text fontWeight="bold">Order fulfilled</s-text> trigger. </s-list-item>
-              <s-list-item>Add a <s-text fontWeight="bold">Wait</s-text> step (e.g. 7 days). </s-list-item>
-              <s-list-item>Add the <s-text fontWeight="bold">Send review request email</s-text> action. </s-list-item>
-              <s-list-item>Turn on the workflow. </s-list-item>
-            </s-numbered-list>
-            <s-button slot="secondary-actions" variant="secondary" href="shopify:admin/apps/flow">Open Shopify Flow</s-button>
-          </s-banner>
-          <s-paragraph>
-            <s-text tone="neutral">Shopify Flow is free and included with all Shopify plans. Each email includes secure, single-use review links — no customer login required.</s-text>
-          </s-paragraph>
-        </s-stack>
-      </s-section>
     </s-page>
   );
 }

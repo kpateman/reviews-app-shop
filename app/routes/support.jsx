@@ -5,6 +5,10 @@ export function meta() {
 export default function Support() {
   return (
     <div style={{ maxWidth: "700px", margin: "0 auto", padding: "3rem 1.5rem", fontFamily: "sans-serif", lineHeight: "1.7", color: "#333" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem" }}>
+        <img src="/app_icon_for_reviews_app.jpg" alt="Lean Reviews" style={{ width: "48px", height: "48px", borderRadius: "10px", objectFit: "cover", flexShrink: 0 }} />
+        <span style={{ fontSize: "1.25rem", fontWeight: 700, color: "#008060" }}>Lean Reviews</span>
+      </div>
       <h1 style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>Support</h1>
       <p style={{ color: "#666", marginBottom: "2rem" }}>Lean Reviews</p>
 

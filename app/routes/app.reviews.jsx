@@ -1,16 +1,15 @@
 import { useLoaderData, useFetcher, useSearchParams } from "react-router";
 import { authenticate } from "../shopify.server";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import prisma from "../db.server";
 import cache from "../utils/cache.server";
 import { updateProductReviewCount } from "../utils/metafields.server";
 import { createReviewDiscountCode } from "../utils/discount.server";
 import { sendDiscountRewardEmail } from "../utils/email.server";
-import { generateReviewToken, buildReviewUrl } from "../utils/review-tokens.server";
 import { deleteImageFromCloudinary } from "../utils/cloudinary.server";
 
 export async function loader({ request }) {
-  const { session, admin } = await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
   const url = new URL(request.url);
@@ -30,7 +29,7 @@ export async function loader({ request }) {
 
   const skip = (page - 1) * perPage;
 
-  const [reviews, total, productsResponse, rawReviewedProducts] = await Promise.all([
+  const [reviews, total, rawReviewedProducts] = await Promise.all([
     prisma.review.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -56,18 +55,6 @@ export async function loader({ request }) {
       },
     }),
     prisma.review.count({ where }),
-    admin.graphql(`
-      query {
-        products(first: 100, sortKey: TITLE) {
-          edges {
-            node {
-              id
-              title
-            }
-          }
-        }
-      }
-    `).then(r => r.json()).catch(() => null),
     prisma.review.findMany({
       where: { shop },
       distinct: ["productId"],
@@ -76,16 +63,11 @@ export async function loader({ request }) {
     }),
   ]);
 
-  const shopProducts = productsResponse?.data?.products?.edges?.map(e => ({
-    id: e.node.id,
-    title: e.node.title,
-  })) || [];
-
   const reviewedProducts = rawReviewedProducts
     .filter(r => r.productId && r.productTitle)
     .map(r => ({ id: r.productId, title: r.productTitle }));
 
-  return { reviews, page, perPage, total, shop, shopProducts, reviewedProducts };
+  return { reviews, page, perPage, total, reviewedProducts };
 }
 
 async function invalidateCaches(shop) {
@@ -151,21 +133,6 @@ export async function action({ request }) {
       data: { reply: reply || null, repliedAt: reply ? new Date() : null },
     });
     await invalidateCaches(shop);
-  } else if (actionType === "requestReview") {
-    const productId = formData.get("productId");
-    const productTitle = formData.get("productTitle");
-    const customerEmail = formData.get("customerEmail");
-    const customerName = formData.get("customerName");
-
-    if (!productId || !productTitle || !customerEmail || !customerName) {
-      return { success: false, error: "All fields are required." };
-    }
-
-    const { token } = await generateReviewToken({ shop, productId, productTitle, customerEmail, customerName });
-    const reviewUrls = {};
-    for (let i = 1; i <= 5; i++) reviewUrls[i] = buildReviewUrl(shop, token, i);
-
-    return { success: true, reviewToken: { token, reviewUrl: buildReviewUrl(shop, token), reviewUrls } };
   } else if (actionType === "toggleImage") {
     const imageId = formData.get("imageId");
     const approved = formData.get("approved") === "true";
@@ -262,7 +229,7 @@ export async function action({ request }) {
 }
 
 export default function ReviewsPage() {
-  const { reviews, page, perPage, total, shop, shopProducts, reviewedProducts } = useLoaderData();
+  const { reviews, page, perPage, total, reviewedProducts } = useLoaderData();
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter  = searchParams.get("status")    || "all";
   const ratingFilter  = searchParams.get("rating")    || "all";
@@ -284,30 +251,26 @@ export default function ReviewsPage() {
     return "?" + next.toString();
   }, [searchParams]);
 
+  // If the filtered product no longer has any reviews (e.g. last review deleted),
+  // clear the productId filter so "All products" actually loads all reviews.
+  useEffect(() => {
+    if (productFilter !== "all" && !reviewedProducts.find(p => p.id === productFilter)) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete("productId");
+        next.delete("page");
+        return next;
+      });
+    }
+  }, [reviewedProducts, productFilter, setSearchParams]);
+
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState("");
-  const [showRequestForm, setShowRequestForm] = useState(false);
-  const [requestResult, setRequestResult] = useState(null);
-  const [copied, setCopied] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const fetcher = useFetcher();
   const bulkFetcher = useFetcher();
-  const requestFetcher = useFetcher();
-
-  const handleRequestSubmit = useCallback((e) => {
-    e.preventDefault();
-    setRequestResult(null);
-    const fd = new FormData(e.target);
-    fd.set("action", "requestReview");
-    requestFetcher.submit(fd, { method: "post" });
-  }, [requestFetcher]);
-
-  const requestData = requestFetcher.data;
-  if (requestData?.reviewToken && requestResult?.token !== requestData.reviewToken.token) {
-    setRequestResult(requestData.reviewToken);
-  }
 
   // Clear selection after bulk action completes
   const bulkData = bulkFetcher.data;
@@ -316,13 +279,6 @@ export default function ReviewsPage() {
     setShowDeleteConfirm(false);
     setDeleteConfirmText("");
   }
-
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
 
   const toggleSelect = useCallback((id) => {
     setSelectedIds((prev) => {
@@ -409,101 +365,7 @@ export default function ReviewsPage() {
 
   return (
     <s-page heading="Reviews">
-      {/* Request Review Section */}
-      <s-box padding="base" borderWidth="base" borderRadius="base" style={{ marginBottom: "24px" }}>
-        <s-stack direction="block" gap="base">
-          <s-stack direction="inline" gap="base" align="space-between">
-            <s-text variant="headingSm">Request a Review</s-text>
-            <s-button variant="tertiary" onClick={() => { setShowRequestForm(!showRequestForm); setRequestResult(null); }}>
-              {showRequestForm ? "Close" : "Send Review Request"}
-            </s-button>
-          </s-stack>
 
-          {showRequestForm && (
-            <form onSubmit={handleRequestSubmit}>
-              <s-stack direction="block" gap="base">
-                <s-stack direction="inline" gap="base">
-                  <div style={{ flex: 1 }}>
-                    <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 500 }}>Customer Email</label>
-                    <input name="customerEmail" type="email" required placeholder="customer@example.com"
-                      style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontSize: "14px", boxSizing: "border-box" }} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 500 }}>Customer Name</label>
-                    <input name="customerName" type="text" required placeholder="Jane Doe"
-                      style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontSize: "14px", boxSizing: "border-box" }} />
-                  </div>
-                </s-stack>
-                <s-stack direction="inline" gap="base">
-                  <div style={{ flex: 1 }}>
-                    <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 500 }}>Product</label>
-                    {shopProducts.length > 0 ? (
-                      <>
-                        <select name="productId" required
-                          onChange={(e) => {
-                            const sel = shopProducts.find(p => p.id === e.target.value);
-                            const titleInput = e.target.form.querySelector('[name="productTitle"]');
-                            if (titleInput && sel) titleInput.value = sel.title;
-                          }}
-                          style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontSize: "14px" }}>
-                          <option value="">Select a product...</option>
-                          {shopProducts.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
-                        </select>
-                        <input name="productTitle" type="hidden" />
-                      </>
-                    ) : (
-                      <>
-                        <input name="productId" type="text" required placeholder="gid://shopify/Product/12345"
-                          style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontSize: "14px", boxSizing: "border-box" }} />
-                        <div style={{ marginTop: "8px" }}>
-                          <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 500 }}>Product Title</label>
-                          <input name="productTitle" type="text" required placeholder="Product name"
-                            style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontSize: "14px", boxSizing: "border-box" }} />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </s-stack>
-
-                <s-button variant="primary" type="submit" disabled={requestFetcher.state !== "idle"}>
-                  {requestFetcher.state !== "idle" ? "Generating..." : "Generate Review Link"}
-                </s-button>
-
-                {requestData?.error && (
-                  <s-text tone="critical">{requestData.error}</s-text>
-                )}
-
-                {requestResult && (
-                  <s-box padding="base" background="subdued" borderRadius="base">
-                    <s-stack direction="block" gap="base">
-                      <s-text variant="headingSm">Review link generated!</s-text>
-                      <s-text tone="subdued">Share this link with the customer, or use the star-specific URLs in your email template.</s-text>
-                      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                        <input type="text" readOnly value={requestResult.reviewUrl}
-                          style={{ flex: 1, padding: "8px", borderRadius: "4px", border: "1px solid #ccc", fontSize: "13px", background: "#f9f9f9" }} />
-                        <s-button variant="tertiary" onClick={() => copyToClipboard(requestResult.reviewUrl)}>
-                          {copied ? "Copied!" : "Copy"}
-                        </s-button>
-                      </div>
-                      <details>
-                        <summary style={{ cursor: "pointer", fontSize: "13px", color: "#666" }}>Star-specific URLs (for email templates)</summary>
-                        <div style={{ marginTop: "8px", fontSize: "13px" }}>
-                          {[1,2,3,4,5].map(n => (
-                            <div key={n} style={{ marginBottom: "4px" }}>
-                              <span style={{ color: "#f5a623" }}>{"★".repeat(n)}{"☆".repeat(5-n)}</span>{" "}
-                              <code style={{ fontSize: "12px", wordBreak: "break-all" }}>{requestResult.reviewUrls[n]}</code>
-                            </div>
-                          ))}
-                        </div>
-                      </details>
-                    </s-stack>
-                  </s-box>
-                )}
-              </s-stack>
-            </form>
-          )}
-        </s-stack>
-      </s-box>
 
       <div style={{ display: "flex", gap: "24px" }}>
         {/* Filters Sidebar */}

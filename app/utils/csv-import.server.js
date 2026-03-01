@@ -57,11 +57,15 @@ function parseImageUrls(urlString) {
 }
 
 /**
- * Detect whether a CSV is from Yotpo or Judge.me by inspecting the header row.
- * Returns 'yotpo', 'judgeme', or 'unknown'.
+ * Detect whether a CSV is from Lean Reviews, Yotpo, or Judge.me by inspecting the header row.
+ * Returns 'leanreviews', 'yotpo', 'judgeme', or 'unknown'.
  */
 export function detectCsvFormat(csvText) {
   const firstLine = (csvText || "").split("\n")[0].toLowerCase();
+  // Check Lean Reviews first — its headers are distinct (customername, imageurls)
+  if (firstLine.includes("customername") && firstLine.includes("imageurls")) {
+    return "leanreviews";
+  }
   if (firstLine.includes("review content") || firstLine.includes("review score")) {
     return "yotpo";
   }
@@ -69,6 +73,44 @@ export function detectCsvFormat(csvText) {
     return "judgeme";
   }
   return "unknown";
+}
+
+/**
+ * Parse a Lean Reviews CSV export (its own format) back into structured review data.
+ * Columns: id, type, status, rating, title, content, customerName, customerEmail,
+ *          productTitle, productHandle, createdAt, reply, repliedAt, imageUrls
+ */
+export function parseLeanReviewsCsv(csvText) {
+  const { data, errors } = Papa.parse(csvText, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: (h) => h.trim(),
+  });
+
+  const critical = errors.filter((e) => e.type === "Quotes");
+  if (critical.length > 0) {
+    throw new Error(`CSV parse error: ${critical[0].message} (row ${critical[0].row})`);
+  }
+
+  return data
+    .filter((row) => row["content"] || row["title"])
+    .map((row) => ({
+      yotpoId: null,
+      type: row["type"] === "company" ? "company" : "product",
+      status: ["approved", "pending", "rejected"].includes(row["status"]) ? row["status"] : "pending",
+      rating: Math.min(5, Math.max(1, parseInt(row["rating"], 10) || 5)),
+      title: (row["title"] || "(No title)").slice(0, 100),
+      content: row["content"] || row["title"] || "",
+      createdAt: row["createdAt"] ? new Date(row["createdAt"]) : new Date(),
+      customerName: row["customerName"] || "Anonymous",
+      customerEmail: row["customerEmail"] || "",
+      productHandle: row["productHandle"] || null,
+      productTitle: row["productTitle"] || null,
+      yotpoProductId: null,
+      orderId: null,
+      imageUrls: parseImageUrls(row["imageUrls"]),
+      unpublishedImageUrls: [],
+    }));
 }
 
 /**

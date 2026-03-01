@@ -1,5 +1,10 @@
 <div class="star-rating-summary"
-     data-product-id="{{ product.id | prepend: 'gid://shopify/Product/' }}">
+     {% if product.id %}
+       data-product-id="{{ product.id | prepend: 'gid://shopify/Product/' }}"
+       data-type="product"
+     {% else %}
+       data-type="company"
+     {% endif %}>
   <span class="stars">☆☆☆☆☆</span>
   <span class="count"></span>
 </div>
@@ -26,10 +31,14 @@
   (function() {
     const container = document.querySelector('.star-rating-summary');
     const productId = container.dataset.productId;
+    const type = container.dataset.type;
 
     const apiUrl = '/apps/reviews';
+    const fetchUrl = type === 'company'
+      ? `${apiUrl}?type=company`
+      : `${apiUrl}?productId=${encodeURIComponent(productId)}&type=product`;
 
-    fetch(`${apiUrl}?productId=${encodeURIComponent(productId)}&type=product`)
+    fetch(fetchUrl)
       .then(res => res.json())
       .then(data => {
         if (data.summary) {

@@ -76,21 +76,22 @@ export const loader = async ({ request }) => {
     avgRating: val.count > 0 ? val.totalRating / val.count : 0,
   }));
 
-  // Product insights: filter for 2+ reviews, sort for lowest and most reviewed
-  const productsWithMultiple = productStats
-    .filter((p) => p._count._all >= 2)
-    .map((p) => ({
-      productId: p.productId,
-      productTitle: p.productTitle || "Unknown Product",
-      count: p._count._all,
-      avgRating: Number((p._avg.rating || 0).toFixed(1)),
-    }));
+  // Product insights
+  const allProductsMapped = productStats.map((p) => ({
+    productId: p.productId,
+    productTitle: p.productTitle || "Unknown Product",
+    count: p._count._all,
+    avgRating: Number((p._avg.rating || 0).toFixed(1)),
+  }));
 
-  const lowestRated = [...productsWithMultiple]
+  // Lowest rated: no minimum count — show any product with at least one approved review
+  const lowestRated = [...allProductsMapped]
     .sort((a, b) => a.avgRating - b.avgRating)
     .slice(0, 5);
 
-  const mostReviewed = [...productsWithMultiple]
+  // Most reviewed: require 2+ reviews to be meaningful
+  const mostReviewed = [...allProductsMapped]
+    .filter((p) => p.count >= 2)
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 
@@ -308,28 +309,34 @@ export default function AnalyticsPage() {
       {/* Email Conversion */}
       {emailConversion && (
         <s-section heading="Review Request Emails">
-          <s-box padding="base" borderWidth="base" borderRadius="base">
-            <s-stack direction="inline" gap="loose">
+          <s-stack direction="inline" gap="loose">
+            <s-box padding="base" borderWidth="base" borderRadius="base" minWidth="140px">
               <s-stack direction="block" gap="tight">
                 <s-text variant="headingLg">{emailConversion.sent}</s-text>
                 <s-text>Emails Sent</s-text>
               </s-stack>
+            </s-box>
+            <s-box padding="base" borderWidth="base" borderRadius="base" minWidth="140px">
               <s-stack direction="block" gap="tight">
                 <s-text variant="headingLg">{emailConversion.converted}</s-text>
                 <s-text>Reviews Received</s-text>
               </s-stack>
+            </s-box>
+            <s-box padding="base" borderWidth="base" borderRadius="base" minWidth="140px">
               <s-stack direction="block" gap="tight">
                 <s-text variant="headingLg" tone={emailConversion.rate >= 20 ? "success" : emailConversion.rate >= 10 ? "warning" : "critical"}>
                   {emailConversion.rate}%
                 </s-text>
                 <s-text>Conversion Rate</s-text>
               </s-stack>
+            </s-box>
+            <s-box padding="base" borderWidth="base" borderRadius="base" minWidth="140px">
               <s-stack direction="block" gap="tight">
                 <s-text variant="headingLg">{emailConversion.avgDays} days</s-text>
                 <s-text>Avg Time to Review</s-text>
               </s-stack>
-            </s-stack>
-          </s-box>
+            </s-box>
+          </s-stack>
         </s-section>
       )}
 
